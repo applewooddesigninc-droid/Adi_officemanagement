@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <div id="root">
+    <div class="spinner" aria-label="Loading"></div>
+  </div>
+  <input type="hidden" id="deepLinkTask" value="<?= deepLinkTask ?>">
+  <?!= include('JavaScript'); ?>
+</body>
+</html>

@@ -1,0 +1,719 @@
+<script>
+/* ADI Work Management — client SPA. Every server call is re-authorized on the
+   server; the UI only hides controls the viewer may not use. */
+(function () {
+  'use strict';
+
+  var RANK = { L1: 4, L2: 3, L3: 2, L4: 1 };
+  var S = { boot: null, view: 'dashboard', projectId: null, filters: {}, notifOpen: false };
+
+  /* ---------- server bridge ---------- */
+  function call(fn) {
+    var args = [].slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function (e) { reject(e); })[fn].apply(null, args);
+    });
+  }
+
+  /* ---------- helpers ---------- */
+  var $ = function (sel, el) { return (el || document).querySelector(sel); };
+  function h(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function stageClass(s) { return 'stage-' + String(s).toLowerCase().replace(/\s+/g, ''); }
+  function initials(name) { return String(name || '?').trim().split(/\s+/).map(function (w){return w[0];}).slice(0,2).join('').toUpperCase(); }
+  function switchAccountUrl() { var url = (S.boot && S.boot.webAppUrl) || location.href; return 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(url); }
+  function fmtDate(d) { if (!d) return ''; return String(d).slice(0, 10); }
+  function fmtWhen(iso) { if (!iso) return ''; return String(iso).replace('T', ' ').slice(0, 16); }
+  function toast(msg, isErr) {
+    var t = document.createElement('div');
+    t.className = 'toast' + (isErr ? ' err' : ''); t.textContent = msg;
+    document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3200);
+  }
+  function errToast(e) { toast((e && e.message) ? e.message : String(e), true); }
+  function busy(on) { var r = $('#root'); if (r) r.style.cursor = on ? 'progress' : ''; }
+
+  function assignableFor(user, roster) {
+    return roster.filter(function (u) { return u.active && RANK[u.level] <= RANK[user.level]; });
+  }
+  function userName(email) {
+    var u = (S.boot.roster || []).filter(function (x){return x.email===email;})[0];
+    return u ? u.name : email;
+  }
+  function priorityOptionsHtml(current) {
+    return '<option value=""' + (current ? '' : ' selected') + '>— No priority —</option>' +
+      S.boot.meta.priorities.map(function (x){return '<option'+(x===current?' selected':'')+'>'+x+'</option>';}).join('');
+  }
+  function assigneeOptionsHtml(current) {
+    var list = assignableFor(S.boot.user, S.boot.roster);
+    return '<option value=""' + (current ? '' : ' selected') + '>— Unassigned —</option>' +
+      list.map(function (x){return '<option value="'+h(x.email)+'"'+(x.email===current?' selected':'')+'>'+h(x.name)+'</option>';}).join('');
+  }
+  function priBadge(pri) { return pri ? '<span class="badge pri-'+h(pri)+'">'+h(pri)+'</span>' : '<span class="small muted">—</span>'; }
+  function dueCell(t) { return t.due_date ? (t.overdue ? '<span class="badge over">'+fmtDate(t.due_date)+'</span>' : fmtDate(t.due_date)) : '—'; }
+  function statusControl(t) {
+    if (t.nextStages && t.nextStages.length) {
+      return '<select class="qstat" onclick="event.stopPropagation()" onchange="App.quickStage(\''+t.id+'\',this.value)">' +
+        '<option value="">'+h(t.stage)+'…</option>' +
+        t.nextStages.map(function(s){return '<option value="'+h(s)+'">→ '+h(s)+'</option>';}).join('') + '</select>';
+    }
+    return '<span class="badge '+stageClass(t.stage)+'">'+h(t.stage)+'</span>';
+  }
+  (function injectCss(){ if (document.getElementById('adi-inline-css') || !document.head) return;
+    var st = document.createElement('style'); st.id = 'adi-inline-css';
+    st.textContent = '.qedit,.qstat{padding:4px 6px;font-size:12px;border-radius:6px;width:auto;min-width:100px;max-width:170px}';
+    document.head.appendChild(st); })();
+
+  /* ---------- bootstrap ---------- */
+  function init() {
+    call('getBootstrap').then(function (b) {
+      if (!b || !b.ok) return renderAccess(b || {});
+      S.boot = b;
+      renderShell();
+      navigate('dashboard');
+      refreshBell();
+      var dl = ($('#deepLinkTask') || {}).value;
+      if (dl) openTask(dl);
+    }).catch(function (e) { renderAccess({ message: (e && e.message) || 'Failed to load.' }); });
+  }
+
+  function renderAccess(b) {
+    $('#root').innerHTML =
+      '<div class="access card">' +
+        '<div class="logo">ADI<span class="dot"> Designs</span></div>' +
+        '<div class="muted" style="margin-bottom:18px">Work &amp; Task Management</div>' +
+        '<h2 style="margin-bottom:8px">Access required</h2>' +
+        '<p class="muted">' + h(b.message || 'You are not signed in.') + '</p>' +
+        (b.email ? '<p class="small muted">Signed in as ' + h(b.email) + '</p>' : '') +
+        '<p style="margin-top:14px"><a href="' + switchAccountUrl() + '" target="_blank">Sign in with a different Google account</a></p>' +
+      '</div>';
+  }
+
+  /* ---------- shell ---------- */
+  function renderShell() {
+    var u = S.boot.user;
+    var nav = [
+      { v: 'dashboard', ic: '▦', t: 'Dashboard' },
+      { v: 'projects', ic: '▣', t: 'Projects' },
+      { v: 'mytasks', ic: '✔', t: 'My Tasks' }
+    ];
+    if (S.boot.canManageUsers) nav.push({ v: 'admin', ic: '⚙', t: 'Team' });
+
+    $('#root').innerHTML =
+      '<div class="topbar">' +
+        '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
+          '<small>' + h(S.boot.meta.appName) + '</small></div>' +
+        '<div class="spacer"></div>' +
+        (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
+        '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
+        '<div class="userchip" title="' + h(u.email) + '"><span class="avatar">' + h(initials(u.name)) + '</span>' +
+          '<span>' + h(u.name) + ' · <b>' + h(u.label) + '</b></span></div>' + '<a href="' + switchAccountUrl() + '" target="_blank" style="margin-left:10px;color:#fff;font-size:12px;text-decoration:underline;opacity:.9" title="Sign in as a different Google account">Switch</a>' +
+      '</div>' +
+      '<div class="layout">' +
+        '<div class="sidebar"><div class="nav" id="nav">' +
+          nav.map(function (n) {
+            return '<a href="#" data-view="' + n.v + '" onclick="App.nav(\'' + n.v + '\');return false;">' +
+              '<span class="ic">' + n.ic + '</span>' + n.t + '</a>';
+          }).join('') +
+        '</div></div>' +
+        '<div class="main" id="main"></div>' +
+      '</div>' +
+      '<div id="notifPop"></div><div id="modalHost"></div>';
+  }
+
+  function navigate(view) {
+    S.view = view;
+    [].forEach.call(document.querySelectorAll('#nav a'), function (a) {
+      a.classList.toggle('active', a.getAttribute('data-view') === view);
+    });
+    if (view === 'dashboard') renderDashboard();
+    else if (view === 'projects') renderProjects();
+    else if (view === 'mytasks') renderMyTasks();
+    else if (view === 'admin') renderAdmin();
+  }
+
+  /* ---------- dashboard ---------- */
+  function renderDashboard() {
+    var main = $('#main');
+    main.innerHTML = '<div class="spinner"></div>';
+    call('getDashboard', S.filters).then(function (d) {
+      var st = d.stats;
+      var cards = [
+        ['Projects', st.projects, ''], ['Open tasks', st.openTasks, ''],
+        ['My pending', st.myPending, ''], ['My overdue', st.myOverdue, st.myOverdue ? 'alert' : ''],
+        ['Awaiting my approval', st.awaitingApproval, ''], ['Avg completion', st.completionAvg + '%', '']
+      ];
+      var roster = S.boot.roster;
+      main.innerHTML =
+        '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
+          (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') +
+        '</div>' +
+        '<div class="stat-grid">' + cards.map(function (c) {
+          return '<div class="card stat ' + c[2] + '"><div class="n">' + c[1] + '</div><div class="l">' + c[0] + '</div></div>';
+        }).join('') + '</div>' +
+        '<div class="card" style="padding:14px;margin-bottom:18px">' +
+          '<h4 style="margin-bottom:10px">Workflow distribution</h4>' + stageBar(d.stageCounts) +
+        '</div>' +
+        filtersBar(roster, d.projects) +
+        '<div id="taskList"></div>';
+      renderTaskRows(d.tasks);
+    }).catch(errToast);
+  }
+
+  function stageBar(counts) {
+    var total = Object.keys(counts).reduce(function (s, k){return s + counts[k];}, 0) || 1;
+    var colors = { 'To Do': '#9aa0a6', 'In Progress': '#2f6fb0', 'Review': '#C1A051', 'Completed': '#3f8f4f' };
+    return '<div class="prog" style="display:flex;height:14px">' +
+      Object.keys(counts).map(function (k) {
+        var w = (counts[k] / total * 100).toFixed(1);
+        return '<i style="width:' + w + '%;background:' + colors[k] + '" title="' + k + ': ' + counts[k] + '"></i>';
+      }).join('') + '</div>' +
+      '<div class="row wrap small muted" style="margin-top:8px">' +
+        Object.keys(counts).map(function (k) {
+          return '<span><span class="badge ' + stageClass(k) + '">' + k + '</span> ' + counts[k] + '</span>';
+        }).join('&nbsp;&nbsp;') + '</div>';
+  }
+
+  function filtersBar(roster, projects) {
+    function opts(list, val, lbl) {
+      return list.map(function (o) {
+        return '<option value="' + h(o[val]) + '"' + (S.filters[lbl] === o[val] ? ' selected' : '') + '>' + h(o.txt || o[val]) + '</option>';
+      }).join('');
+    }
+    var stageOpts = S.boot.meta.stages.map(function (s){return {value:s,txt:s};});
+    var priOpts = S.boot.meta.priorities.map(function (p){return {value:p,txt:p};});
+    var projOpts = projects.map(function (p){return {id:p.id,txt:p.name};});
+    var userOpts = roster.filter(function(u){return u.active;}).map(function (u){return {email:u.email,txt:u.name};});
+    return '<div class="filters">' +
+      '<input id="fq" placeholder="Search tasks…" value="' + h(S.filters.q || '') + '" oninput="App.debounceFilter()">' +
+      '<select id="fproject" onchange="App.applyFilters()"><option value="">All projects</option>' +
+        projOpts.map(function(o){return '<option value="'+h(o.id)+'"'+(S.filters.project===o.id?' selected':'')+'>'+h(o.txt)+'</option>';}).join('') + '</select>' +
+      '<select id="fassignee" onchange="App.applyFilters()"><option value="">Any assignee</option>' +
+        userOpts.map(function(o){return '<option value="'+h(o.email)+'"'+(S.filters.assignee===o.email?' selected':'')+'>'+h(o.txt)+'</option>';}).join('') + '</select>' +
+      '<select id="fstage" onchange="App.applyFilters()"><option value="">Any stage</option>' +
+        stageOpts.map(function(o){return '<option value="'+h(o.value)+'"'+(S.filters.stage===o.value?' selected':'')+'>'+h(o.txt)+'</option>';}).join('') + '</select>' +
+      '<select id="fdue" onchange="App.applyFilters()">' +
+        ['','overdue','today','week'].map(function(v){var lbl={'':'Any due date',overdue:'Overdue',today:'Due today',week:'Due this week'}[v];return '<option value="'+v+'"'+(S.filters.due===v?' selected':'')+'>'+lbl+'</option>';}).join('') + '</select>' +
+      '<button class="btn ghost" onclick="App.clearFilters()">Clear</button>' +
+    '</div>';
+  }
+
+  function dashRowCells(t) {
+    var assignee = t.canReassign
+      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickAssignee(\''+t.id+'\',this.value)">'+assigneeOptionsHtml(t.assignee_email)+'</select>'
+      : (t.assignee_name ? h(t.assignee_name) : '<span class="small muted">Unassigned</span>');
+    var priority = t.canEditDef
+      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickField(\''+t.id+'\',\'priority\',this.value)">'+priorityOptionsHtml(t.priority)+'</select>'
+      : priBadge(t.priority);
+    var due = t.canEditDef
+      ? '<input type="date" class="qedit" onclick="event.stopPropagation()" value="'+h(fmtDate(t.due_date))+'" onchange="App.quickField(\''+t.id+'\',\'due_date\',this.value)">'
+      : '<span class="small">'+dueCell(t)+'</span>';
+    return '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><b>'+h(t.title)+'</b>'+(t.parent_task_id?' <span class="small muted">(subtask)</span>':'')+'</td>' +
+      '<td class="small" onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
+      '<td class="small">'+assignee+'</td><td>'+priority+'</td><td>'+due+'</td>' +
+      '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><span class="badge '+stageClass(t.stage)+'">'+h(t.stage)+'</span></td>';
+  }
+  function renderTaskRows(tasks) {
+    var host = $('#taskList'); if (!host) return;
+    if (!tasks.length) { host.innerHTML = '<div class="card" style="padding:24px"><p class="muted center">No tasks match.</p></div>'; return; }
+    host.innerHTML = '<table class="tbl"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Stage</th></tr></thead><tbody>' +
+      tasks.map(function (t) { return '<tr data-task-id="'+t.id+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
+  }
+  function patchDashRow(t) {
+    if (!t || !t.id) return;
+    var tr = document.querySelector('#taskList tr[data-task-id="'+t.id+'"]');
+    if (tr) tr.innerHTML = dashRowCells(t);
+  }
+  var _projCache = {};
+  function projName(id) { return _projCache[id] || id; }
+
+  /* ---------- projects ---------- */
+  function renderProjects() {
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('listProjects').then(function (ps) {
+      ps.forEach(function (p) { _projCache[p.id] = p.name; });
+      main.innerHTML =
+        '<div class="page-head"><h1>Projects</h1><div class="spacer"></div>' +
+          (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') + '</div>' +
+        (ps.length ? '<div class="proj-grid">' + ps.map(projCard).join('') + '</div>'
+                   : '<div class="card" style="padding:28px"><p class="muted center">No projects yet.</p></div>');
+    }).catch(errToast);
+  }
+
+  function canCreateTaskInProject(p) {
+    var u = S.boot.user; if (!p) return false;
+    if (u.level === 'L1') return true;
+    if (u.level === 'L2') { if (p.owner_email === u.email) return true; var o = (S.boot.roster.filter(function (x) { return x.email === p.owner_email; })[0] || {}); return RANK[o.level] < RANK[u.level]; }
+    return false;
+  }
+
+  function projCard(p) {
+    return '<div class="card proj">' +
+      '<div class="row"><h3 class="grow">' + h(p.name) + '</h3>' +
+        '<span class="badge status">' + h(p.status) + '</span></div>' +
+      '<div class="small muted">' + h(p.description || 'No description') + '</div>' +
+      '<div class="small muted">Owner: ' + h(p.owner_name) + ' · ' + p.openCount + ' open / ' + p.taskCount + ' tasks</div>' +
+      '<div class="prog"><i style="width:' + p.completion + '%"></i></div>' +
+      '<div class="row small"><span class="muted grow">' + p.completion + '% complete</span>' +
+        (canCreateTaskInProject(p) ? '<button class="btn gold sm" onclick="event.stopPropagation();App.newTask(\'' + p.id + '\')">+ Task</button>' : '') + '<button class="btn sm" onclick="App.openProject(\'' + p.id + '\')">Open board</button></div>' +
+    '</div>';
+  }
+
+  function openProject(id) {
+    S.projectId = id; var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    Promise.all([call('listProjects'), call('listProjectTasks', id)]).then(function (res) {
+      var p = res[0].filter(function (x){return x.id===id;})[0] || { name: 'Project' };
+      res[0].forEach(function (x){_projCache[x.id]=x.name;});
+      var tasks = res[1];
+      var byStage = {}; S.boot.meta.stages.forEach(function (s){byStage[s]=[];});
+      tasks.filter(function(t){return !t.parent_task_id;}).forEach(function (t){ (byStage[t.stage]||[]).push(t); });
+      var subByParent = {}; tasks.filter(function(t){return t.parent_task_id;}).forEach(function(t){ (subByParent[t.parent_task_id]=subByParent[t.parent_task_id]||[]).push(t); });
+
+      var canAddTask = canCreateTaskInProject(p);
+      var addHint = (!canAddTask && S.boot.user.level === 'L2') ? '<span class="small muted" style="margin-left:8px">Only the owner (' + h(p.owner_name) + ') or a Director can add tasks here</span>' : '';
+      main.innerHTML =
+        '<div class="page-head"><button class="btn ghost sm" onclick="App.nav(\'projects\')">← Projects</button>' +
+          '<h1 style="margin-left:6px">' + h(p.name) + '</h1>' +
+          '<span class="badge status">' + h(p.status) + '</span><div class="spacer"></div>' +
+          (canEditProj(p) ? '<button class="btn ghost sm" onclick="App.editProject(\'' + id + '\')">Edit</button>' : '') +
+          (canAddTask ? '<button class="btn gold" onclick="App.newTask(\'' + id + '\')">+ New task</button>' : addHint) +
+        '</div>' +
+        '<div class="board">' + S.boot.meta.stages.map(function (s) {
+          return '<div class="col"><h4>' + s + '<span>' + byStage[s].length + '</span></h4>' +
+            byStage[s].map(function (t) { return taskCard(t, subByParent[t.id] || []); }).join('') + (canAddTask && s === 'To Do' ? '<button class="btn ghost sm" style="width:100%;margin-top:4px" onclick="App.newTask(\'' + id + '\')">+ Add</button>' : '') + '</div>';
+        }).join('') + '</div>';
+    }).catch(errToast);
+  }
+
+  function taskCard(t, subs) {
+    return '<div class="tcard" onclick="App.openTask(\'' + t.id + '\')">' +
+      '<div class="t">' + h(t.title) + '</div>' +
+      '<div class="meta">' +
+        '<span class="badge pri-' + h(t.priority) + '">' + h(t.priority) + '</span>' +
+        (t.due_date ? '<span class="badge ' + (t.overdue ? 'over' : 'status') + '">' + fmtDate(t.due_date) + '</span>' : '') +
+        '<span class="small muted">' + h(t.assignee_name) + '</span>' +
+      '</div>' +
+      (subs.length ? '<div class="small muted" style="margin-top:6px">▸ ' + subs.length + ' subtask' + (subs.length>1?'s':'') + '</div>' : '') +
+    '</div>';
+  }
+
+  function canEditProj(p) {
+    var u = S.boot.user;
+    return u.level === 'L1' || (u.level === 'L2' && p.owner_email === u.email);
+  }
+
+  /* ---------- my tasks ---------- */
+  function renderMyTasks() {
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('listMyWork').then(function (w) {
+      main.innerHTML = '<div class="page-head"><h1>My Tasks</h1></div>' +
+        (w.awaiting.length ? '<h4 style="margin:6px 0 8px">Awaiting my approval (' + w.awaiting.length + ')</h4>' + myTaskTable(w.awaiting, true) : '') +
+        '<h4 style="margin:16px 0 8px">Assigned to me (' + w.assignedToMe.length + ')</h4>' + myTaskTable(w.assignedToMe, false) +
+        '<h4 style="margin:16px 0 8px">Assigned by me (' + w.assignedByMe.length + ')</h4>' + myTaskTable(w.assignedByMe, true);
+    }).catch(errToast);
+  }
+  function myTaskTable(tasks, withAssignee) {
+    if (!tasks.length) return '<div class="card" style="padding:16px"><p class="muted center small">Nothing here.</p></div>';
+    var head = '<tr><th>Task</th><th>Project</th>' + (withAssignee ? '<th>Assignee</th>' : '') + '<th>Priority</th><th>Due</th><th>Status</th></tr>';
+    return '<table class="tbl"><thead>' + head + '</thead><tbody>' +
+      tasks.map(function (t) { return '<tr data-task-id="'+t.id+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table>';
+  }
+  function myCells(t, withAssignee) {
+    return '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><b>'+h(t.title)+'</b>'+(t.parent_task_id?' <span class="small muted">(subtask)</span>':'')+'</td>' +
+      '<td class="small" onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
+      (withAssignee ? '<td class="small">'+(t.assignee_name?h(t.assignee_name):'<span class="small muted">Unassigned</span>')+'</td>' : '') +
+      '<td>'+priBadge(t.priority)+'</td><td class="small">'+dueCell(t)+'</td><td>'+statusControl(t)+'</td>';
+  }
+
+  /* ---------- task modal ---------- */
+  function openTask(id) {
+    busy(true);
+    call('getTaskDetail', id).then(function (d) { busy(false); renderTaskModal(d); }).catch(function (e) { busy(false); errToast(e); });
+  }
+
+  function renderTaskModal(d) {
+    var p = d.perms;
+    var stageActions = [];
+    if (p.advance && d.stage === 'To Do') stageActions.push(btn('startTask', d.id, 'Start (→ In Progress)', 'btn'));
+    if (p.advance && d.stage === 'In Progress') stageActions.push(btn('submitForReview', d.id, 'Submit for review', 'btn gold'));
+    if (p.selfSubtask && d.stage !== 'Completed') stageActions.push(btn('approveTask', d.id, 'Mark complete', 'btn gold'));
+    if (p.approve && d.stage === 'Review') {
+      stageActions.push(btn('approveTask', d.id, 'Approve ✓', 'btn'));
+      stageActions.push('<button class="btn danger" onclick="App.sendBack(\'' + d.id + '\')">Send back</button>');
+    }
+    if (p.approve && d.stage === 'Completed') stageActions.push(btn('reopenTask', d.id, 'Reopen', 'btn ghost'));
+
+    var assignOpts = (d.assignable || []).map(function (u) {
+      return '<option value="' + h(u.email) + '"' + (u.email === d.assignee_email ? ' selected' : '') + '>' + h(u.name) + '</option>';
+    }).join('');
+
+    var html =
+      '<div class="overlay" onclick="App.bgClose(event)"><div class="modal">' +
+        '<div class="head">' +
+          '<div class="grow"><div class="row wrap" style="gap:6px;margin-bottom:6px">' +
+            '<span class="badge ' + stageClass(d.stage) + '">' + h(d.stage) + '</span>' +
+            priBadge(d.priority) +
+            (d.overdue ? '<span class="badge over">Overdue</span>' : '') +
+            '<span class="small muted">' + h(d.project_name) + (d.parent_task_id ? ' · subtask' : '') + '</span></div>' +
+            '<h2 id="tTitle">' + h(d.title) + '</h2></div>' +
+          '<button class="x" onclick="App.closeModal()">×</button>' +
+        '</div>' +
+        '<div class="body">' +
+          (stageActions.length ? '<div class="row wrap" style="margin-bottom:12px">' + stageActions.join('') + '</div>' : '') +
+          '<div class="small muted">Assignee: <b>' + (d.assignee_name ? h(d.assignee_name) : 'Unassigned') + '</b> · Created by ' + h(d.creator_name) + ' · Due ' + (d.due_date ? fmtDate(d.due_date) : '—') + '</div>' +
+          '<p style="white-space:pre-wrap;margin-top:10px">' + h(d.description || '') + '</p>' +
+
+          (p.editDefinition ? defEditor(d, assignOpts, p) : '') +
+
+          /* checklist */
+          '<div class="section"><h4>Checklist</h4><div id="chkList">' + checklistHtml(d.checklist, p.editExecution) + '</div>' +
+            (p.editExecution ? '<div class="row" style="margin-top:8px"><input id="chkNew" placeholder="Add checklist item…"><button class="btn sm" onclick="App.addChk(\'' + d.id + '\')">Add</button></div>' : '') +
+          '</div>' +
+
+          /* subtasks */
+          '<div class="section"><h4>Subtasks</h4><div id="subList">' + subtasksHtml(d.subtasks) + '</div>' +
+            (p.canCreateSubtask && !d.parent_task_id ? '<button class="btn ghost sm" style="margin-top:8px" onclick="App.newSubtask(\'' + d.id + '\')">+ Add subtask</button>' : '') +
+          '</div>' +
+
+          /* attachments */
+          '<div class="section"><h4>Attachments</h4><div id="attList">' + attHtml(d.attachments, S.boot.user) + '</div>' +
+            (p.comment ? '<div class="row wrap" style="margin-top:8px">' +
+              '<button class="btn ghost sm" onclick="App.pickFile(\'' + d.id + '\')">⬆ Upload file</button>' +
+              '<button class="btn ghost sm" onclick="App.linkFile(\'' + d.id + '\')">🔗 Link Drive file</button>' +
+              '<input type="file" id="fileInput" class="hidden"></div>' : '') +
+          '</div>' +
+
+          /* comments */
+          '<div class="section"><h4>Comments</h4><div id="cmtList">' + commentsHtml(d.comments) + '</div>' +
+            (p.comment ? '<div style="margin-top:8px"><textarea id="cmtNew" placeholder="Write a comment… use @name to notify"></textarea>' +
+              '<div class="row" style="margin-top:6px"><span class="small muted grow">Tip: type @ then a teammate\'s name</span>' +
+              '<button class="btn sm" onclick="App.addCmt(\'' + d.id + '\')">Comment</button></div></div>' : '') +
+          '</div>' +
+
+          '<div class="section"><h4>History</h4>' + activityHtml(d.activity) + '</div>' +
+          (p.editDefinition ? '<div class="section"><button class="btn danger sm" onclick="App.deleteTask(\'' + d.id + '\')">Delete task</button></div>' : '') +
+        '</div>' +
+      '</div></div>';
+    $('#modalHost').innerHTML = html;
+    window._task = d;
+  }
+
+  function defEditor(d, assignOpts, p) {
+    return '<div class="section"><h4>Edit details</h4>' +
+      '<label class="fld"><span>Title</span><input id="edTitle" value="' + h(d.title) + '"></label>' +
+      '<label class="fld"><span>Description</span><textarea id="edDesc">' + h(d.description || '') + '</textarea></label>' +
+      '<div class="row wrap">' +
+        '<label class="fld grow"><span>Priority</span><select id="edPriority">' + priorityOptionsHtml(d.priority) + '</select></label>' +
+        '<label class="fld grow"><span>Due date</span><input type="date" id="edDue" value="' + h(fmtDate(d.due_date)) + '"></label>' +
+        (p.reassign && assignOpts ? '<label class="fld grow"><span>Assignee</span><select id="edAssignee">' + assignOpts + '</select></label>' : '') +
+      '</div>' +
+      '<button class="btn sm" onclick="App.saveDef(\'' + d.id + '\',' + (p.reassign && assignOpts ? 'true' : 'false') + ')">Save details</button>' +
+    '</div>';
+  }
+
+  function btn(fn, id, label, cls) { return '<button class="' + cls + '" onclick="App.stage(\'' + fn + '\',\'' + id + '\')">' + label + '</button>'; }
+
+  function checklistHtml(items, editable) {
+    if (!items.length) return '<p class="small muted">No checklist items.</p>';
+    return items.map(function (c) {
+      return '<div class="chk' + (c.done ? ' done' : '') + '">' +
+        '<input type="checkbox"' + (c.done ? ' checked' : '') + (editable ? '' : ' disabled') +
+          ' onchange="App.toggleChk(\'' + c.id + '\',this.checked)">' +
+        '<span class="grow">' + h(c.text) + '</span>' +
+        (editable ? '<button class="x small" onclick="App.delChk(\'' + c.id + '\')">×</button>' : '') + '</div>';
+    }).join('');
+  }
+  function subtasksHtml(subs) {
+    if (!subs.length) return '<p class="small muted">No subtasks.</p>';
+    return subs.map(function (t) {
+      return '<div class="tcard sub" onclick="App.openTask(\'' + t.id + '\')">' +
+        '<div class="row"><span class="grow"><b>' + h(t.title) + '</b></span>' +
+        '<span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span></div>' +
+        '<div class="small muted">' + h(t.assignee_name) + (t.due_date ? ' · due ' + fmtDate(t.due_date) : '') + '</div></div>';
+    }).join('');
+  }
+  function attHtml(atts, user) {
+    if (!atts.length) return '<p class="small muted">No attachments.</p>';
+    return atts.map(function (a) {
+      var canDel = a.uploaded_by === user.email || user.level === 'L1';
+      return '<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line-soft)">' +
+        '<span class="grow"><a href="' + h(a.drive_url) + '" target="_blank">' + h(a.file_name) + '</a> ' +
+        '<span class="small muted">(' + h(a.kind) + ')</span></span>' +
+        (canDel ? '<button class="x small" onclick="App.delAtt(\'' + a.id + '\')">×</button>' : '') + '</div>';
+    }).join('');
+  }
+  function commentsHtml(cmts) {
+    if (!cmts.length) return '<p class="small muted">No comments yet.</p>';
+    return cmts.map(function (c) {
+      return '<div class="cmt"><div class="row"><span class="who grow">' + h(c.author_name) +
+        '</span><span class="when">' + fmtWhen(c.created_at) + (c.edited_at ? ' · edited' : '') + '</span>' +
+        (c.mine ? ' <button class="x small" onclick="App.delCmt(\'' + c.id + '\')">×</button>' : '') + '</div>' +
+        '<div class="bd">' + mention(h(c.body)) + '</div></div>';
+    }).join('');
+  }
+  function mention(escaped) { return escaped.replace(/@([\w.\-]+(?:@[\w.\-]+)?)/g, '<span class="mention">@$1</span>'); }
+  function activityHtml(items) {
+    if (!items || !items.length) return '<p class="small muted">No activity yet.</p>';
+    return items.map(function (a) {
+      return '<div class="cmt"><div class="row"><span class="who grow">'+h(a.actor_name)+'</span><span class="when">'+fmtWhen(a.created_at)+'</span></div>' +
+        '<div class="bd small">'+h(a.text)+'</div></div>';
+    }).join('');
+  }
+
+  /* ---------- actions exposed to inline handlers ---------- */
+  var App = {
+    nav: navigate,
+    openTask: openTask,
+    openProject: openProject,
+    closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; },
+    bgClose: function (e) { if (e.target.classList.contains('overlay')) App.closeModal(); },
+
+    /* filters */
+    applyFilters: function () {
+      S.filters = {
+        q: ($('#fq')||{}).value || '', project: ($('#fproject')||{}).value || '',
+        assignee: ($('#fassignee')||{}).value || '', stage: ($('#fstage')||{}).value || '',
+        due: ($('#fdue')||{}).value || ''
+      };
+      call('getDashboard', S.filters).then(function (d) { renderTaskRows(d.tasks); }).catch(errToast);
+    },
+    debounceFilter: function () { clearTimeout(App._dt); App._dt = setTimeout(App.applyFilters, 350); },
+    clearFilters: function () { S.filters = {}; renderDashboard(); },
+
+    /* projects */
+    newProject: function () {
+      modal('New project',
+        '<label class="fld"><span>Name</span><input id="pName"></label>' +
+        '<label class="fld"><span>Description</span><textarea id="pDesc"></textarea></label>' +
+        '<label class="fld"><span>Status</span><select id="pStatus">' +
+          S.boot.meta.projectStatus.map(function(s){return '<option>'+s+'</option>';}).join('') + '</select></label>',
+        'Create', function () {
+          var name = $('#pName').value.trim(); if (!name) return toast('Name required', true);
+          return call('createProject', name, $('#pDesc').value, $('#pStatus').value).then(function () {
+            App.closeModal(); toast('Project created'); navigate('projects');
+          });
+        });
+    },
+    editProject: function (id) {
+      call('listProjects').then(function (ps) {
+        var p = ps.filter(function(x){return x.id===id;})[0]; if (!p) return;
+        modal('Edit project',
+          '<label class="fld"><span>Name</span><input id="pName" value="' + h(p.name) + '"></label>' +
+          '<label class="fld"><span>Description</span><textarea id="pDesc">' + h(p.description||'') + '</textarea></label>' +
+          '<label class="fld"><span>Status</span><select id="pStatus">' +
+            S.boot.meta.projectStatus.map(function(s){return '<option'+(s===p.status?' selected':'')+'>'+s+'</option>';}).join('') + '</select></label>' +
+          '<button class="btn danger sm" style="margin-top:8px" onclick="App.deleteProject(\'' + id + '\')">Delete project</button>',
+          'Save', function () {
+            return call('updateProject', id, { name: $('#pName').value, description: $('#pDesc').value, status: $('#pStatus').value })
+              .then(function () { App.closeModal(); toast('Saved'); openProject(id); });
+          });
+      });
+    },
+    deleteProject: function (id) {
+      if (!confirm('Delete this project and all its tasks? This cannot be undone.')) return;
+      call('deleteProject', id).then(function () { App.closeModal(); toast('Project deleted'); navigate('projects'); }).catch(errToast);
+    },
+
+    /* tasks */
+    newTask: function (projectId) { taskForm('Create task', null, projectId); },
+    newSubtask: function (parentId) { taskForm('Add subtask', parentId, null); },
+    quickAssignee: function (id, val) { call('reassignTask', id, val).then(function (t) { toast('Assignee updated'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
+    quickField: function (id, field, val) { var patch = {}; patch[field] = val; call('updateTaskDefinition', id, patch).then(function (t) { toast('Saved'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
+    quickStage: function (id, val) { if (!val) return; call('setStageQuick', id, val).then(function () { toast('Status updated'); renderMyTasks(); refreshBell(); }).catch(function (e) { errToast(e); renderMyTasks(); }); },
+    globalNewTask: function () {
+      call('listProjects').then(function (ps) {
+        var allowed = ps.filter(canCreateTaskInProject);
+        if (!allowed.length) { toast('No project you can add tasks to.', true); return; }
+        modal('New task',
+          '<label class="fld"><span>Project</span><select id="gProject">' + allowed.map(function (p){return '<option value="'+h(p.id)+'">'+h(p.name)+'</option>';}).join('') + '</select></label>' +
+          '<label class="fld"><span>Title</span><input id="tTitleNew"></label>' +
+          '<label class="fld"><span>Description</span><textarea id="tDesc"></textarea></label>' +
+          '<div class="row wrap"><label class="fld grow"><span>Priority</span><select id="tPriority">' + priorityOptionsHtml('') + '</select></label>' +
+          '<label class="fld grow"><span>Due date</span><input type="date" id="tDue"></label></div>' +
+          '<label class="fld"><span>Assignee</span><select id="tAssignee">' + assigneeOptionsHtml('') + '</select></label>',
+          'Create', function () {
+            var pid = $('#gProject').value;
+            var fields = { title: $('#tTitleNew').value, description: $('#tDesc').value, priority: $('#tPriority').value, due_date: $('#tDue').value, assignee_email: $('#tAssignee').value };
+            if (!fields.title.trim()) { toast('Title required', true); return; }
+            return call('createTask', pid, fields).then(function () { App.closeModal(); toast('Task created'); S.projectId = pid; openProject(pid); });
+          });
+      }).catch(errToast);
+    },
+    saveDef: function (id, withAssignee) {
+      var patch = { title: $('#edTitle').value, description: $('#edDesc').value,
+        priority: $('#edPriority').value, due_date: $('#edDue').value };
+      var chain = call('updateTaskDefinition', id, patch);
+      if (withAssignee && $('#edAssignee')) {
+        var na = $('#edAssignee').value;
+        chain = chain.then(function () { return call('reassignTask', id, na); });
+      }
+      chain.then(function () { toast('Saved'); openTask(id); refreshCurrentList(); }).catch(errToast);
+    },
+    deleteTask: function (id) {
+      if (!confirm('Delete this task?')) return;
+      call('deleteTask', id).then(function () { App.closeModal(); toast('Task deleted'); refreshCurrentList(); }).catch(errToast);
+    },
+    stage: function (fn, id) {
+      var f = fn === 'reopenTask' ? function(){return call('moveStage', id, 'In Progress');} : function(){return call(fn, id);};
+      f().then(function (d) { toast('Updated'); if (d && d.id) renderTaskModal(d); else openTask(id); refreshCurrentList(); refreshBell(); }).catch(errToast);
+    },
+    sendBack: function (id) {
+      var note = prompt('Add a note for the assignee (optional):') || '';
+      call('sendBack', id, note).then(function (d) { toast('Sent back'); renderTaskModal(d); refreshCurrentList(); }).catch(errToast);
+    },
+
+    /* checklist */
+    addChk: function (taskId) {
+      var v = $('#chkNew').value.trim(); if (!v) return;
+      call('addChecklistItem', taskId, v).then(function (d) { renderTaskModal(d); }).catch(errToast);
+    },
+    toggleChk: function (itemId, done) { call('toggleChecklistItem', itemId, done).catch(errToast); },
+    delChk: function (itemId) { call('deleteChecklistItem', itemId).then(function (d){ renderTaskModal(d); }).catch(errToast); },
+
+    /* comments */
+    addCmt: function (taskId) {
+      var v = $('#cmtNew').value.trim(); if (!v) return;
+      call('addComment', taskId, v).then(function (d) { renderTaskModal(d); refreshBell(); }).catch(errToast);
+    },
+    delCmt: function (id) { var t = window._task; call('deleteComment', id).then(function (d){ renderTaskModal(d); }).catch(errToast); },
+
+    /* attachments */
+    pickFile: function (taskId) {
+      var inp = $('#fileInput'); inp.value = '';
+      inp.onchange = function () {
+        var f = inp.files[0]; if (!f) return;
+        if (f.size > 30 * 1024 * 1024) return toast('File >30MB — use “Link Drive file” instead.', true);
+        var r = new FileReader();
+        r.onload = function () {
+          var b64 = r.result.split(',')[1];
+          toast('Uploading…');
+          call('uploadAttachment', taskId, b64, f.name, f.type).then(function (d) { toast('Uploaded'); renderTaskModal(d); }).catch(errToast);
+        };
+        r.readAsDataURL(f);
+      };
+      inp.click();
+    },
+    linkFile: function (taskId) {
+      var url = prompt('Paste the Google Drive share link:'); if (!url) return;
+      var label = prompt('Label (optional):') || '';
+      call('linkAttachment', taskId, url, label).then(function (d) { toast('Linked'); renderTaskModal(d); }).catch(errToast);
+    },
+    delAtt: function (id) { call('deleteAttachment', id).then(function (d){ renderTaskModal(d); }).catch(errToast); },
+
+    /* admin */
+    addUser: function () {
+      var email = $('#uEmail').value.trim(), name = $('#uName').value.trim(), level = $('#uLevel').value;
+      if (!email) return toast('Email required', true);
+      call('addUser', email, name, level).then(function () { toast('User added'); renderAdmin(); }).catch(errToast);
+    },
+    setLevel: function (email, level) { call('updateUser', email, { level: level }).then(function(){ toast('Updated'); renderAdmin(); }).catch(errToast); },
+    toggleActive: function (email, active) { call('updateUser', email, { active: active }).then(function(){ toast(active?'Activated':'Deactivated'); renderAdmin(); }).catch(errToast); },
+
+    /* notifications */
+    toggleNotif: function (e) { if (e) e.stopPropagation(); S.notifOpen = !S.notifOpen; if (S.notifOpen) loadNotifs(); else $('#notifPop').innerHTML = ''; },
+    openFromNotif: function (id, taskId) { call('markNotificationRead', id).then(refreshBell); $('#notifPop').innerHTML=''; S.notifOpen=false; if (taskId) openTask(taskId); },
+    markAll: function () { call('markAllNotificationsRead').then(function(){ refreshBell(); loadNotifs(); }); }
+  };
+  App._dt = null;
+  window.App = App;
+
+  /* ---------- shared modal ---------- */
+  function modal(title, bodyHtml, okLabel, onOk) {
+    $('#modalHost').innerHTML =
+      '<div class="overlay" onclick="App.bgClose(event)"><div class="modal" style="max-width:520px">' +
+        '<div class="head"><h2 class="grow">' + h(title) + '</h2><button class="x" onclick="App.closeModal()">×</button></div>' +
+        '<div class="body">' + bodyHtml +
+          '<div class="row" style="margin-top:16px;justify-content:flex-end">' +
+            '<button class="btn ghost" onclick="App.closeModal()">Cancel</button>' +
+            '<button class="btn gold" id="modalOk">' + h(okLabel) + '</button></div>' +
+        '</div></div></div>';
+    $('#modalOk').onclick = function () { var r = onOk(); if (r && r.catch) r.catch(errToast); };
+  }
+
+  function taskForm(title, parentId, projectId) {
+    var u = S.boot.user;
+    var assignable = assignableFor(u, S.boot.roster);
+    var assignField = '<label class="fld"><span>Assignee</span><select id="tAssignee">' + assigneeOptionsHtml('') + '</select></label>';
+    modal(title,
+      '<label class="fld"><span>Title</span><input id="tTitleNew"></label>' +
+      '<label class="fld"><span>Description</span><textarea id="tDesc"></textarea></label>' +
+      '<div class="row wrap">' +
+        '<label class="fld grow"><span>Priority</span><select id="tPriority">' + priorityOptionsHtml('') + '</select></label>' +
+        '<label class="fld grow"><span>Due date</span><input type="date" id="tDue"></label>' +
+      '</div>' + assignField,
+      'Create', function () {
+        var fields = { title: $('#tTitleNew').value, description: $('#tDesc').value,
+          priority: $('#tPriority').value, due_date: $('#tDue').value,
+          assignee_email: ($('#tAssignee')||{}).value };
+        if (!fields.title.trim()) { toast('Title required', true); return; }
+        var promise = parentId ? call('createSubtask', parentId, fields) : call('createTask', projectId, fields);
+        return promise.then(function () {
+          App.closeModal(); toast('Created');
+          if (parentId) openTask(parentId); else if (projectId) { S.projectId = projectId; openProject(projectId); }
+        });
+      });
+  }
+
+  function refreshCurrentList() {
+    if (S.view === 'projects' && S.projectId) { /* board refresh happens on demand */ }
+    if (S.view === 'dashboard') App.applyFilters();
+    if (S.view === 'mytasks') renderMyTasks();
+    if (S.view === 'projects' && S.projectId) openProject(S.projectId);
+  }
+
+  /* ---------- admin ---------- */
+  function renderAdmin() {
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('listUsers').then(function (us) {
+      main.innerHTML =
+        '<div class="page-head"><h1>Team &amp; access</h1></div>' +
+        '<div class="card" style="padding:16px;margin-bottom:18px"><h4 style="margin-bottom:8px">Add team member</h4>' +
+          '<div class="filters" style="margin:0">' +
+            '<input id="uEmail" placeholder="email@gmail.com">' +
+            '<input id="uName" placeholder="Full name">' +
+            '<select id="uLevel"><option value="L3">L3 · Team Member</option><option value="L2">L2 · Project Lead</option><option value="L1">L1 · Director</option><option value="L4">L4 · Junior Member</option></select>' +
+            '<button class="btn gold" onclick="App.addUser()">Add / update</button>' +
+          '</div><p class="small muted" style="margin-top:8px">Only emails listed here (and active) can sign in.</p></div>' +
+        '<table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Status</th><th></th></tr></thead><tbody>' +
+          us.map(function (u) {
+            return '<tr><td><b>' + h(u.name) + '</b></td><td class="small">' + h(u.email) + '</td>' +
+              '<td><select onchange="App.setLevel(\'' + h(u.email) + '\',this.value)">' +
+                ['L1','L2','L3','L4'].map(function(l){return '<option value="'+l+'"'+(u.level===l?' selected':'')+'>'+l+'</option>';}).join('') + '</select></td>' +
+              '<td>' + (u.active ? '<span class="badge stage-completed">Active</span>' : '<span class="badge stage-todo">Inactive</span>') + '</td>' +
+              '<td>' + (u.active
+                ? '<button class="btn danger sm" onclick="App.toggleActive(\'' + h(u.email) + '\',false)">Deactivate</button>'
+                : '<button class="btn ghost sm" onclick="App.toggleActive(\'' + h(u.email) + '\',true)">Reactivate</button>') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+    }).catch(errToast);
+  }
+
+  /* ---------- notifications ---------- */
+  function refreshBell() {
+    call('unreadCount').then(function (n) {
+      var b = $('#bellCount'); if (!b) return;
+      b.textContent = n; b.classList.toggle('hidden', !n);
+    }).catch(function () {});
+  }
+  function loadNotifs() {
+    call('listMyNotifications', 30).then(function (list) {
+      $('#notifPop').innerHTML = '<div class="card notif-pop">' +
+        '<div class="row" style="padding:10px 14px;border-bottom:1px solid var(--line)"><b class="grow">Notifications</b>' +
+          '<button class="btn ghost sm" onclick="App.markAll()">Mark all read</button></div>' +
+        (list.length ? list.map(function (n) {
+          return '<div class="notif' + (n.read ? '' : ' unread') + '" onclick="App.openFromNotif(\'' + n.id + '\',\'' + (n.task_id||'') + '\')">' +
+            '<div class="nt">' + h(n.title) + '</div><div class="nb">' + h(n.body) + '</div>' +
+            '<div class="small muted">' + fmtWhen(n.created_at) + '</div></div>';
+        }).join('') : '<div style="padding:18px" class="muted small center">No notifications.</div>') + '</div>';
+    }).catch(errToast);
+  }
+  document.addEventListener('click', function (e) {
+    if (S.notifOpen && !e.target.closest('#notifPop') && !e.target.closest('.bell')) { S.notifOpen = false; $('#notifPop').innerHTML = ''; }
+  });
+
+  /* poll the bell every 90s */
+  setInterval(refreshBell, 90000);
+
+  init();
+})();
+</script>
