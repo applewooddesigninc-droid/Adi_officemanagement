@@ -17,11 +17,18 @@ var CONFIG = {
 
   // ---- Script Property keys (set during Setup) ----
   PROP: {
-    DATA_SHEET_ID: 'DATA_SHEET_ID',     // the Google Sheet that acts as the database
-    ROOT_FOLDER_ID: 'ROOT_FOLDER_ID',   // app home folder in the Director's Drive
-    ATTACH_FOLDER_ID: 'ATTACH_FOLDER_ID', // …/Attachments
-    BACKUP_FOLDER_ID: 'BACKUP_FOLDER_ID', // …/Backups
-    SETUP_DONE: 'SETUP_DONE'
+    DATA_SHEET_ID:    'DATA_SHEET_ID',
+    ROOT_FOLDER_ID:   'ROOT_FOLDER_ID',
+    ATTACH_FOLDER_ID: 'ATTACH_FOLDER_ID',
+    BACKUP_FOLDER_ID: 'BACKUP_FOLDER_ID',
+    SETUP_DONE:       'SETUP_DONE',
+    // WhatsApp
+    EMAIL_ENABLED: 'EMAIL_ENABLED', // 'true' (default) / 'false'
+    WA_ENABLED:  'WA_ENABLED',   // 'true' / 'false'
+    WA_PROVIDER: 'WA_PROVIDER',  // 'twilio' | 'wati' | 'meta'
+    WA_API_KEY:  'WA_API_KEY',   // SID:token (Twilio) | Bearer token (WATI/Meta)
+    WA_API_URL:  'WA_API_URL',   // base URL (WATI / Meta)
+    WA_FROM:     'WA_FROM'       // sender number / phone_number_id
   },
 
   // ---- Drive folder names ----
@@ -33,19 +40,20 @@ var CONFIG = {
 
   // ---- Sheet tab names (the database) ----
   TAB: {
-    USERS: 'Users',
-    PROJECTS: 'Projects',
-    TASKS: 'Tasks',
-    CHECKLIST: 'ChecklistItems',
-    COMMENTS: 'Comments',
-    ATTACHMENTS: 'AttachmentsIndex',
+    USERS:         'Users',
+    PROJECTS:      'Projects',
+    TASKS:         'Tasks',
+    CHECKLIST:     'ChecklistItems',
+    COMMENTS:      'Comments',
+    ATTACHMENTS:   'AttachmentsIndex',
     NOTIFICATIONS: 'NotificationLog',
-    ACTIVITY: 'ActivityLog'
+    ACTIVITY:      'ActivityLog',
+    WA_LOG:        'WhatsAppLog'
   },
 
   // ---- Column headers per tab (order matters; Setup writes these) ----
   HEADERS: {
-    Users:           ['email', 'name', 'level', 'active', 'created_at'],
+    Users:           ['email', 'name', 'level', 'active', 'created_at', 'phone'],
     Projects:        ['id', 'name', 'description', 'status', 'owner_email', 'created_at', 'updated_at'],
     Tasks:           ['id', 'project_id', 'parent_task_id', 'title', 'description', 'assignee_email',
                       'creator_email', 'priority', 'due_date', 'stage', 'created_at', 'updated_at'],
@@ -53,7 +61,9 @@ var CONFIG = {
     Comments:        ['id', 'task_id', 'author_email', 'body', 'mentions', 'created_at', 'edited_at', 'deleted'],
     AttachmentsIndex:['id', 'task_id', 'project_id', 'file_name', 'drive_url', 'drive_file_id', 'kind', 'uploaded_by', 'created_at'],
     NotificationLog: ['id', 'recipient_email', 'type', 'title', 'body', 'task_id', 'read', 'emailed', 'created_at'],
-    ActivityLog:     ['id', 'actor_email', 'action', 'entity_type', 'entity_id', 'details', 'created_at']
+    ActivityLog:     ['id', 'actor_email', 'action', 'entity_type', 'entity_id', 'details', 'created_at'],
+    WhatsAppLog:     ['id', 'recipient_email', 'recipient_phone', 'message', 'status',
+                      'provider', 'attempts', 'error', 'created_at', 'sent_at']
   },
 
   // ---- Roles & hierarchy (strict by level) ----

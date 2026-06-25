@@ -23,6 +23,19 @@ function listUsers() {
   });
 }
 
+/** Full roster including phone — Director only (used by admin panel). */
+function listUsersAdmin() {
+  var me = requireUser();
+  if (!canManageUsers(me)) throw new Error('Director only.');
+  return Db.readAll(CONFIG.TAB.USERS).map(function (u) {
+    return {
+      email: lc(u.email), name: u.name || u.email, level: u.level,
+      label: CONFIG.ROLE_LABEL[u.level] || u.level,
+      active: asBool(u.active), phone: u.phone || '', created_at: u.created_at
+    };
+  });
+}
+
 /** People this user is allowed to assign work to (strictly below their level). */
 function listAssignableUsers() {
   var me = requireUser();
@@ -31,21 +44,34 @@ function listAssignableUsers() {
   });
 }
 
-function addUser(email, name, level) {
+/** Validate international phone format (+country digits). Empty string is allowed (no phone). */
+function validatePhone_(phone) {
+  if (!phone) return; // optional
+  if (!/^\+[1-9]\d{6,14}$/.test(phone)) {
+    throw new Error('Invalid mobile number "' + phone + '". Use international format: +91XXXXXXXXXX (+ then 7–15 digits).');
+  }
+}
+
+function addUser(email, name, level, phone) {
   var me = requireUser();
   if (!canManageUsers(me)) throw new Error('Only the Director can manage users.');
   email = lc(email);
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Invalid email: ' + email);
   if (CONFIG.ROLES[level] !== level) throw new Error('Level must be L1, L2 or L3.');
+  phone = String(phone || '').trim();
+  validatePhone_(phone);
+  ensureUsersPhoneColumn_(); // safe no-op if column already exists
   var existing = Db.findBy(CONFIG.TAB.USERS, 'email', email);
   if (existing) {
-    Db.update(CONFIG.TAB.USERS, 'email', email, { name: name || existing.name, level: level, active: true });
+    var upd = { name: name || existing.name, level: level, active: true };
+    if (phone !== undefined) upd.phone = phone;
+    Db.update(CONFIG.TAB.USERS, 'email', email, upd);
     shareDataWith_(email);
     logActivity(me.email, 'user.update', 'user', email, level);
     return getUserByEmail(email);
   }
   Db.insert(CONFIG.TAB.USERS, {
-    email: email, name: name || email, level: level, active: true, created_at: nowIso()
+    email: email, name: name || email, level: level, active: true, created_at: nowIso(), phone: phone
   });
   shareDataWith_(email);
   logActivity(me.email, 'user.add', 'user', email, level);

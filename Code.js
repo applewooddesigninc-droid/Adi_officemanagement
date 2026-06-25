@@ -36,6 +36,25 @@ function isSetupDone_() {
  * access screen rather than throwing, so non-whitelisted visitors get a clear
  * message instead of a raw error.
  */
+/**
+ * Returns the id of the most recent ActivityLog entry.
+ * Clients call this every 30 s; when the token changes they refresh the view.
+ * Uses a direct single-cell range read instead of Db.readAll() so it is fast
+ * even when the ActivityLog has thousands of rows.
+ */
+function getChangeToken() {
+  requireUser();
+  try {
+    var sh = Db.sheet(CONFIG.TAB.ACTIVITY);
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { token: '0' };
+    var idCol = CONFIG.HEADERS[CONFIG.TAB.ACTIVITY].indexOf('id') + 1;
+    return { token: String(sh.getRange(lastRow, idCol).getValue()) };
+  } catch (e) {
+    return { token: '0' };
+  }
+}
+
 function getBootstrap() {
   if (!isSetupDone_()) {
     return { ok: false, setup: false, email: getViewerEmail(),

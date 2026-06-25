@@ -26,10 +26,14 @@ function dailyDigest() {
     if (!mine.length && !toApprove.length) return; // nothing to say
 
     var html = digestHtml_(u.name || email, mine, overdue, toApprove, projects);
-    try {
-      MailApp.sendEmail({ to: email, subject: '[' + CONFIG.APP_NAME + '] Your daily work digest',
-        htmlBody: html, name: CONFIG.COMPANY });
-    } catch (e) { Logger.log('Digest email failed for ' + email + ': ' + e); }
+    if (emailEnabled_()) {
+      try {
+        MailApp.sendEmail({ to: email, subject: '[' + CONFIG.APP_NAME + '] Your daily work digest',
+          htmlBody: html, name: CONFIG.COMPANY });
+      } catch (e) { Logger.log('Digest email failed for ' + email + ': ' + e); }
+    }
+    try { waDigest_(u.name || email, email, mine, overdue, toApprove, projects); }
+    catch (e) { Logger.log('WA digest failed for ' + email + ': ' + e); }
 
     Db.insert(CONFIG.TAB.NOTIFICATIONS, {
       id: genId('N'), recipient_email: email, type: CONFIG.NOTIF.DIGEST,

@@ -1,5 +1,5 @@
 /**
- * Tasks.gs — tasks + one level of subtasks, the four-stage workflow, and the
+ * Tasks.gs — tasks + unlimited subtask depth, the four-stage workflow, and the
  * gated Review → Completed approval. All transitions are permission-checked.
  *
  * Workflow:  To Do → In Progress → Review → Completed
@@ -24,9 +24,67 @@ function nameOf_(email, users) {
   return (users[email] || {}).name || email;
 }
 
+/* -------------------- Subtask tree helpers -------------------- */
+
+/**
+ * Build a map of { parentId → [child raw task rows] } from any flat task list.
+ * Passed into shapeTask_ so callers that already have the full list can compute
+ * rollup progress without extra Db reads.
+ */
+function buildChildrenIndex_(rawTasks) {
+  var idx = {};
+  rawTasks.forEach(function (t) {
+    var pid = t.parent_task_id;
+    if (pid) {
+      if (!idx[pid]) idx[pid] = [];
+      idx[pid].push(t);
+    }
+  });
+  return idx;
+}
+
+/**
+ * Recursive rollup: returns 0–100 progress for a task's whole subtree.
+ * Leaf nodes contribute their own stage weight; parent nodes average children.
+ */
+function computeSubtreeProgress_(id, childrenOf) {
+  var children = childrenOf[id] || [];
+  if (!children.length) return null; // leaf — caller uses stage weight directly
+  var sum = children.reduce(function (acc, c) {
+    var cp = computeSubtreeProgress_(c.id, childrenOf);
+    return acc + (cp !== null ? cp : (CONFIG.STAGE_WEIGHT[c.stage] || 0) * 100);
+  }, 0);
+  return Math.round(sum / children.length);
+}
+
+/**
+ * BFS over the task graph to collect every descendant ID (avoids call-stack
+ * limits on very deep trees).
+ */
+function collectAllDescendantIds_(taskId) {
+  var ids = [], queue = [taskId];
+  while (queue.length) {
+    var cur = queue.shift();
+    Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === cur; })
+      .forEach(function (c) { ids.push(c.id); queue.push(c.id); });
+  }
+  return ids;
+}
+
+/** Recursively load visible subtasks for the task-detail modal. */
+function loadSubtasksRecursive_(parentId, users, me) {
+  return Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === parentId; })
+    .filter(function (x) { return canViewTask(me, x); })
+    .map(function (x) {
+      var s = shapeTask_(x, users, me);
+      s.subtasks = loadSubtasksRecursive_(x.id, users, me);
+      return s;
+    });
+}
+
 /* -------------------- Shaping -------------------- */
 
-function shapeTask_(t, users, me) {
+function shapeTask_(t, users, me, childrenOf) {
   var s = {
     id: t.id,
     project_id: t.project_id,
@@ -50,6 +108,12 @@ function shapeTask_(t, users, me) {
     s.nextStages = allowedNextStages_(me, t);
     s.canEditDef = canEditDefinition(me, t);
     s.canReassign = canReassign(me, t);
+  }
+  if (childrenOf) {
+    var ch = childrenOf[t.id] || [];
+    s.subtaskCount = ch.length;
+    s.subtasksDone = ch.filter(function (c) { return c.stage === CONFIG.STAGE.DONE; }).length;
+    s.subtaskProgress = ch.length ? computeSubtreeProgress_(t.id, childrenOf) : null;
   }
   return s;
 }
@@ -78,13 +142,14 @@ function allowedNextStages_(me, t) {
 
 /* -------------------- Reads / scoping -------------------- */
 
-/** Tasks in a project that the viewer is allowed to see. */
+/** Tasks in a project that the viewer is allowed to see, with subtask rollup. */
 function listProjectTasks(projectId) {
   var me = requireUser();
   var users = indexUsers_();
-  return Db.filter(CONFIG.TAB.TASKS, function (t) { return t.project_id === projectId; })
-    .filter(function (t) { return canViewTask(me, t); })
-    .map(function (t) { return shapeTask_(t, users, me); });
+  var rows = Db.filter(CONFIG.TAB.TASKS, function (t) { return t.project_id === projectId; })
+    .filter(function (t) { return canViewTask(me, t); });
+  var childrenOf = buildChildrenIndex_(rows);
+  return rows.map(function (t) { return shapeTask_(t, users, me, childrenOf); });
 }
 
 /** Everything the viewer can see. */
@@ -113,9 +178,7 @@ function getTaskDetail(id) {
   var users = indexUsers_();
   var detail = shapeTask_(t, users, me);
 
-  detail.subtasks = Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === id; })
-    .filter(function (x) { return canViewTask(me, x); })
-    .map(function (x) { return shapeTask_(x, users, me); });
+  detail.subtasks = loadSubtasksRecursive_(id, users, me);
 
   detail.checklist = Db.filter(CONFIG.TAB.CHECKLIST, function (c) { return c.task_id === id; })
     .sort(function (a, b) { return (a.position || 0) - (b.position || 0); })
@@ -143,7 +206,12 @@ function getTaskDetail(id) {
     .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); })
     .slice(0, 25)
     .map(function (a) {
-      return { actor_name: nameOf_(a.actor_email, users), text: formatActivity_(a, users), created_at: a.created_at };
+      return {
+        actor_name: nameOf_(a.actor_email, users),
+        action: a.action,
+        text: formatActivity_(a, users),
+        created_at: a.created_at
+      };
     });
 
   detail.perms = {
@@ -164,17 +232,37 @@ function getTaskDetail(id) {
 function formatActivity_(a, users) {
   var d = a.details || '';
   switch (a.action) {
-    case 'task.create':       return 'created this task';
-    case 'subtask.create':    return 'added a subtask';
-    case 'task.stage':        return 'changed status (' + d + ')';
-    case 'task.update':       return 'edited the details';
-    case 'task.reassign':     return 'set assignee to ' + (nameOf_(d, users) || d);
-    case 'comment.add':       return 'commented';
+    case 'task.create':    return 'created this task';
+    case 'subtask.create': return 'added a subtask';
+    case 'task.delete':    return 'deleted this task';
+    case 'task.update':    return 'edited title / description';
+    case 'task.stage': {
+      var sp = d.split(' → ');
+      return 'changed status: ' + (sp[0] || d) + ' → ' + (sp[1] || '');
+    }
+    case 'task.reassign': {
+      var rp = d.split(' → ');
+      if (rp.length === 2) {
+        var fromName = rp[0] === 'none' ? 'unassigned' : (nameOf_(rp[0], users) || rp[0]);
+        var toName   = rp[1] === 'none' ? 'unassigned' : (nameOf_(rp[1], users) || rp[1]);
+        return 'changed assignee: ' + fromName + ' → ' + toName;
+      }
+      return 'assigned to ' + (nameOf_(d, users) || d || 'unassigned');
+    }
+    case 'task.priority': {
+      var pp = d.split(' → ');
+      return 'changed priority: ' + (pp[0] || 'none') + ' → ' + (pp[1] || 'none');
+    }
+    case 'task.due_date': {
+      var dp = d.split(' → ');
+      return 'changed due date: ' + (dp[0] || 'none') + ' → ' + (dp[1] || 'none');
+    }
+    case 'comment.add':       return 'added a comment';
     case 'comment.delete':    return 'deleted a comment';
-    case 'checklist.add':     return 'added a checklist item';
-    case 'checklist.toggle':  return 'updated the checklist';
-    case 'attachment.upload': return 'uploaded an attachment';
-    case 'attachment.link':   return 'linked a Drive file';
+    case 'checklist.add':     return 'added checklist item: ' + d;
+    case 'checklist.toggle':  return 'checked off: ' + d;
+    case 'attachment.upload': return 'uploaded: ' + d;
+    case 'attachment.link':   return 'linked Drive file: ' + d;
     case 'attachment.delete': return 'removed an attachment';
     default:                  return a.action;
   }
@@ -194,7 +282,6 @@ function createSubtask(parentId, fields) {
   var me = requireUser();
   var parent = getTask(parentId);
   if (!parent) throw new Error('Parent task not found.');
-  if (parent.parent_task_id) throw new Error('Only one level of subtasks is allowed.');
   if (!canCreateSubtask(me, parent)) throw new Error('You cannot add a subtask here.');
   return insertTask_(me, getProject(parent.project_id), parentId, fields);
 }
@@ -221,6 +308,7 @@ function insertTask_(me, project, parentId, fields) {
   if (assignee && assignee !== me.email) {
     notifyUser(assignee, CONFIG.NOTIF.ASSIGNED, 'New task assigned: ' + title,
       me.name + ' assigned you "' + title + '" in ' + project.name + '.', id);
+    try { waNotifyAssigned_(assignee, title, project.name, me.name, priority, due); } catch (e) { Logger.log('WA assign notify failed: ' + e); }
   }
   return shapeTaskRow_(id, me);
 }
@@ -232,16 +320,35 @@ function updateTaskDefinition(id, patch) {
   var t = getTask(id);
   if (!canEditDefinition(me, t)) throw new Error('You cannot edit this task\'s details.');
   var clean = {};
-  if (patch.title !== undefined && String(patch.title).trim()) clean.title = String(patch.title).trim();
-  if (patch.description !== undefined) clean.description = patch.description;
+  var textChanged = false;
+  if (patch.title !== undefined && String(patch.title).trim()) {
+    clean.title = String(patch.title).trim();
+    if (clean.title !== t.title) textChanged = true;
+  }
+  if (patch.description !== undefined) {
+    clean.description = patch.description;
+    if (clean.description !== (t.description || '')) textChanged = true;
+  }
   if (patch.priority !== undefined) {
     if (patch.priority !== '' && CONFIG.PRIORITIES.indexOf(patch.priority) < 0) throw new Error('Invalid priority.');
-    clean.priority = patch.priority;                              // '' clears it
+    clean.priority = patch.priority;
   }
   if (patch.due_date !== undefined) clean.due_date = patch.due_date ? String(patch.due_date) : '';
   clean.updated_at = nowIso();
   Db.update(CONFIG.TAB.TASKS, 'id', id, clean);
-  logActivity(me.email, 'task.update', 'task', id, JSON.stringify(clean));
+  // Log a separate history event for each tracked field that actually changed.
+  if (patch.priority !== undefined && patch.priority !== (t.priority || '')) {
+    logActivity(me.email, 'task.priority', 'task', id,
+      (t.priority || 'none') + ' → ' + (patch.priority || 'none'));
+  }
+  if (patch.due_date !== undefined) {
+    var oldDue = String(t.due_date || '').slice(0, 10) || 'none';
+    var newDue = patch.due_date ? String(patch.due_date).slice(0, 10) : 'none';
+    if (oldDue !== newDue) {
+      logActivity(me.email, 'task.due_date', 'task', id, oldDue + ' → ' + newDue);
+    }
+  }
+  if (textChanged) logActivity(me.email, 'task.update', 'task', id, 'title/description');
   return shapeTaskRow_(id, me);
 }
 
@@ -249,15 +356,21 @@ function reassignTask(id, newAssignee) {
   var me = requireUser();
   var t = getTask(id);
   if (!canReassign(me, t)) throw new Error('You cannot reassign this task.');
+  var oldAssignee = lc(t.assignee_email || '');
   newAssignee = lc(newAssignee || '');                            // '' → unassign
   if (newAssignee && !canAssignTo(me, newAssignee)) {
     throw new Error('You can only assign to someone at your level or below.');
   }
   Db.update(CONFIG.TAB.TASKS, 'id', id, { assignee_email: newAssignee, updated_at: nowIso() });
-  logActivity(me.email, 'task.reassign', 'task', id, newAssignee || '(unassigned)');
+  logActivity(me.email, 'task.reassign', 'task', id,
+    (oldAssignee || 'none') + ' → ' + (newAssignee || 'none'));
   if (newAssignee && newAssignee !== me.email) {
     notifyUser(newAssignee, CONFIG.NOTIF.ASSIGNED, 'Task reassigned to you: ' + t.title,
       me.name + ' assigned you "' + t.title + '".', id);
+    try {
+      var proj_ = getProject(t.project_id);
+      waNotifyAssigned_(newAssignee, t.title, (proj_ || {}).name || '', me.name, t.priority, t.due_date);
+    } catch (e) { Logger.log('WA reassign notify failed: ' + e); }
   }
   return shapeTaskRow_(id, me);
 }
@@ -355,12 +468,17 @@ function deleteTask(id) {
   var t = getTask(id);
   if (!t) throw new Error('Task not found.');
   if (!canEditDefinition(me, t)) throw new Error('You cannot delete this task.');
-  var subs = Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === id; });
-  subs.forEach(function (s) { cascadeDeleteTaskData_(s.id); Db.remove(CONFIG.TAB.TASKS, 'id', s.id); });
+  // Collect every descendant at any depth before any rows are deleted (BFS avoids
+  // stack limits; collecting first avoids reading a partially-deleted table).
+  var descendantIds = collectAllDescendantIds_(id);
+  descendantIds.forEach(function (did) {
+    cascadeDeleteTaskData_(did);
+    Db.remove(CONFIG.TAB.TASKS, 'id', did);
+  });
   cascadeDeleteTaskData_(id);
   Db.remove(CONFIG.TAB.TASKS, 'id', id);
   logActivity(me.email, 'task.delete', 'task', id, t.title);
-  return { ok: true, removedSubtasks: subs.length };
+  return { ok: true, removedSubtasks: descendantIds.length };
 }
 
 function cascadeDeleteTaskData_(taskId) {

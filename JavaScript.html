@@ -1,3 +1,6 @@
+<!-- DOMPurify: sanitizes the one place we inject HTML (comment @mention spans).
+     Pin this version; upgrade deliberately after reviewing the changelog. -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.3/dist/purify.min.js"></script>
 <script>
 /* ADI Work Management — client SPA. Every server call is re-authorized on the
    server; the UI only hides controls the viewer may not use. */
@@ -5,7 +8,8 @@
   'use strict';
 
   var RANK = { L1: 4, L2: 3, L3: 2, L4: 1 };
-  var S = { boot: null, view: 'dashboard', projectId: null, filters: {}, notifOpen: false };
+  var S = { boot: null, view: 'dashboard', projectId: null, filters: {}, notifOpen: false, modalTaskId: null };
+  var _sync = { token: null, flying: false };
 
   /* ---------- server bridge ---------- */
   function call(fn) {
@@ -21,6 +25,62 @@
   var $ = function (sel, el) { return (el || document).querySelector(sel); };
   function h(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  // Validates a URL for use in href attributes.  h() escapes HTML entities but
+  // does not block the javascript: protocol, which browsers execute on click.
+  // Only https:// and http:// URLs are forwarded; everything else becomes '#'.
+  function safeUrl(url) {
+    if (!url) return '#';
+    var s = String(url).trim();
+    return /^https?:\/\//i.test(s) ? h(s) : '#';
+  }
+
+  // Highlights @mentions in a comment body.  The body MUST be HTML-escaped with
+  // h() before calling this function; we then inject controlled <span> elements
+  // and pass the result through DOMPurify to allow only those spans.
+  function sanitizeMention(rawBody) {
+    var escaped = h(rawBody);
+    var withSpans = escaped.replace(
+      /@([\w.\-]+(?:@[\w.\-]+)?)/g,
+      '<span class="mention">@$1</span>'
+    );
+    if (typeof DOMPurify !== 'undefined') {
+      return DOMPurify.sanitize(withSpans, {
+        ALLOWED_TAGS: ['span'],
+        ALLOWED_ATTR: ['class']
+      });
+    }
+    return withSpans; // graceful fallback if CDN is unavailable
+  }
+
+  /**
+   * Takes a flat array of tasks (each with parent_task_id) and returns them in
+   * depth-first tree order with a `depth` field added.  Tasks whose parent is
+   * not present in the array are treated as roots (depth 0), which correctly
+   * handles ancestor-context rows that appear when a filter is active.
+   */
+  function buildFlatTree_(tasks) {
+    var byId = {}, childMap = {};
+    tasks.forEach(function (t) { byId[t.id] = t; });
+    tasks.forEach(function (t) {
+      var pid = t.parent_task_id;
+      if (pid && byId[pid]) {
+        if (!childMap[pid]) childMap[pid] = [];
+        childMap[pid].push(t);
+      }
+    });
+    var result = [];
+    function visit(t, depth) {
+      t._depth = depth;
+      result.push(t);
+      (childMap[t.id] || []).forEach(function (c) { visit(c, depth + 1); });
+    }
+    tasks.forEach(function (t) {
+      if (!t.parent_task_id || !byId[t.parent_task_id]) visit(t, 0);
+    });
+    return result;
+  }
+
   function stageClass(s) { return 'stage-' + String(s).toLowerCase().replace(/\s+/g, ''); }
   function initials(name) { return String(name || '?').trim().split(/\s+/).map(function (w){return w[0];}).slice(0,2).join('').toUpperCase(); }
   function switchAccountUrl() { var url = (S.boot && S.boot.webAppUrl) || location.href; return 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(url); }
@@ -54,7 +114,7 @@
   function dueCell(t) { return t.due_date ? (t.overdue ? '<span class="badge over">'+fmtDate(t.due_date)+'</span>' : fmtDate(t.due_date)) : '—'; }
   function statusControl(t) {
     if (t.nextStages && t.nextStages.length) {
-      return '<select class="qstat" onclick="event.stopPropagation()" onchange="App.quickStage(\''+t.id+'\',this.value)">' +
+      return '<select class="qstat" onclick="event.stopPropagation()" onchange="App.quickStage(\''+h(t.id)+'\',this.value)">' +
         '<option value="">'+h(t.stage)+'…</option>' +
         t.nextStages.map(function(s){return '<option value="'+h(s)+'">→ '+h(s)+'</option>';}).join('') + '</select>';
     }
@@ -62,7 +122,43 @@
   }
   (function injectCss(){ if (document.getElementById('adi-inline-css') || !document.head) return;
     var st = document.createElement('style'); st.id = 'adi-inline-css';
-    st.textContent = '.qedit,.qstat{padding:4px 6px;font-size:12px;border-radius:6px;width:auto;min-width:100px;max-width:170px}';
+    st.textContent = '.qedit,.qstat{padding:4px 6px;font-size:12px;border-radius:6px;width:auto;min-width:100px;max-width:170px}' +
+      '#confirmHost .overlay{z-index:500}' +
+      '.warn-box{background:#fff3cd;border:1px solid #e6ac00;border-radius:6px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.5}' +
+      '.widget-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}' +
+      '@media(max-width:960px){.widget-grid{grid-template-columns:repeat(2,1fr)}}' +
+      '@media(max-width:580px){.widget-grid{grid-template-columns:1fr}}' +
+      '.widget{padding:14px;overflow:hidden}' +
+      '.widget-head{display:flex;align-items:center;margin-bottom:10px}' +
+      '.widget-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#8A7B6B)}' +
+      '.w-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;background:var(--line,#eee);color:var(--text,#2B2118);margin-left:6px;line-height:1.6}' +
+      '.w-badge.alert{background:#fee2e2;color:#b91c1c}' +
+      '.w-badge.warn{background:#fef3c7;color:#92400e}' +
+      '.w-link{margin-left:auto;font-size:12px;color:var(--primary,#77361A);cursor:pointer;white-space:nowrap}' +
+      '.w-link:hover{text-decoration:underline}' +
+      '.widget-list{list-style:none;padding:0;margin:0}' +
+      '.widget-list li{padding:5px 0;border-bottom:1px solid var(--line-soft,#f0ebe4);cursor:pointer;font-size:13px;line-height:1.4}' +
+      '.widget-list li:last-child{border-bottom:none}' +
+      '.widget-list li:hover .wt{color:var(--primary,#77361A)}' +
+      '.wt{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.wm{display:block;font-size:11px;color:var(--muted,#8A7B6B)}' +
+      '.w-empty{font-size:13px;color:var(--muted,#8A7B6B);padding:10px 0}' +
+      '.emp-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line-soft,#f0ebe4);font-size:12px}' +
+      '.emp-row:last-child{border-bottom:none}' +
+      '.emp-name{min-width:80px;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}' +
+      '.proj-row{margin-bottom:9px}' +
+      '.proj-row:last-child{margin-bottom:0}' +
+      '.hist-timeline{position:relative;padding-left:20px}' +
+      '.hist-timeline::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line,#e8e0d6)}' +
+      '.hist-entry{position:relative;padding:7px 0 7px 14px;border-bottom:1px solid var(--line-soft,#f0ebe4)}' +
+      '.hist-entry:last-child{border-bottom:none}' +
+      '.hist-dot{position:absolute;left:-19px;top:11px;width:10px;height:10px;border-radius:50%;border:2px solid #fff;flex-shrink:0}' +
+      '.hd-create{background:#16a34a}.hd-status{background:#2f6fb0}.hd-assign{background:#7c3aed}' +
+      '.hd-priority{background:#ea580c}.hd-due{background:#0891b2}.hd-comment{background:#6b7280}' +
+      '.hd-check{background:#d97706}.hd-attach{background:#0d9488}.hd-default{background:#9aa0a6}.hd-delete{background:#dc2626}' +
+      '.hist-who{font-size:12px;font-weight:600;color:var(--text)}' +
+      '.hist-when{font-size:11px;color:var(--muted);margin-left:6px}' +
+      '.hist-text{font-size:12px;color:var(--muted);margin-top:2px}';
     document.head.appendChild(st); })();
 
   /* ---------- bootstrap ---------- */
@@ -73,6 +169,8 @@
       renderShell();
       navigate('dashboard');
       refreshBell();
+      syncReset(); // establish change-detection baseline after initial load
+      setInterval(syncTick, 30000);
       var dl = ($('#deepLinkTask') || {}).value;
       if (dl) openTask(dl);
     }).catch(function (e) { renderAccess({ message: (e && e.message) || 'Failed to load.' }); });
@@ -119,7 +217,7 @@
         '</div></div>' +
         '<div class="main" id="main"></div>' +
       '</div>' +
-      '<div id="notifPop"></div><div id="modalHost"></div>';
+      '<div id="notifPop"></div><div id="modalHost"></div><div id="confirmHost"></div>';
   }
 
   function navigate(view) {
@@ -155,10 +253,122 @@
         '<div class="card" style="padding:14px;margin-bottom:18px">' +
           '<h4 style="margin-bottom:10px">Workflow distribution</h4>' + stageBar(d.stageCounts) +
         '</div>' +
+        renderWidgets(d) +
         filtersBar(roster, d.projects) +
         '<div id="taskList"></div>';
       renderTaskRows(d.tasks);
     }).catch(errToast);
+  }
+
+  /* ---------- dashboard widgets ---------- */
+  function renderWidgets(d) {
+    var w = d.widgets;
+
+    function wHead(title, badge, filterVal) {
+      return '<div class="widget-head">' +
+        '<span class="widget-title">' + title + '</span>' +
+        (badge !== null ? badge : '') +
+        (filterVal ? '<span class="w-link" onclick="App.setDueFilter(\'' + h(filterVal) + '\')">View all →</span>' : '') +
+      '</div>';
+    }
+
+    function taskList(items, showDate) {
+      if (!items.length) return '<p class="w-empty">None right now ✓</p>';
+      return '<ul class="widget-list">' + items.map(function (t) {
+        var meta = [];
+        if (showDate && t.due_date) meta.push(fmtDate(t.due_date));
+        if (t.assignee_name) meta.push(h(t.assignee_name));
+        if (t.project_name) meta.push(h(t.project_name));
+        return '<li onclick="App.openTask(\'' + h(t.id) + '\')">' +
+          '<span class="wt">' + h(t.title) + '</span>' +
+          (meta.length ? '<span class="wm">' + meta.join(' · ') + '</span>' : '') +
+        '</li>';
+      }).join('') + '</ul>';
+    }
+
+    // 1. Overdue
+    var overdueCount = w.overdue.length;
+    var overdueBadge = overdueCount
+      ? '<span class="w-badge alert">' + overdueCount + (overdueCount >= 8 ? '+' : '') + '</span>'
+      : '';
+    var overdueCard = '<div class="card widget">' +
+      wHead('Overdue', overdueBadge, 'overdue') +
+      taskList(w.overdue, true) + '</div>';
+
+    // 2. Due today
+    var todayCount = w.dueToday.length;
+    var todayBadge = todayCount ? '<span class="w-badge warn">' + todayCount + '</span>' : '';
+    var dueTodayCard = '<div class="card widget">' +
+      wHead('Due today', todayBadge, 'today') +
+      taskList(w.dueToday, false) + '</div>';
+
+    // 3. Due this week
+    var weekCount = w.dueWeek.length;
+    var weekBadge = weekCount ? '<span class="w-badge">' + weekCount + (weekCount >= 8 ? '+' : '') + '</span>' : '';
+    var dueWeekCard = '<div class="card widget">' +
+      wHead('Due this week', weekBadge, 'week') +
+      taskList(w.dueWeek, true) + '</div>';
+
+    // 4. Tasks by employee
+    var empMaxOpen = w.byEmployee.reduce(function (m, u) { return Math.max(m, u.open); }, 1);
+    var empBody = w.byEmployee.length
+      ? w.byEmployee.slice(0, 8).map(function (u) {
+          var pct = Math.round(u.open / empMaxOpen * 100);
+          return '<div class="emp-row">' +
+            '<span class="emp-name" title="' + h(u.name) + '">' + h(u.name.split(' ')[0]) + '</span>' +
+            '<div class="prog" style="flex:1;height:7px"><i style="width:' + pct + '%"></i></div>' +
+            '<span style="min-width:22px;text-align:right;font-size:12px">' + u.open + '</span>' +
+            (u.overdue ? '<span class="w-badge alert" style="margin-left:2px">' + u.overdue + '↑</span>' : '') +
+          '</div>';
+        }).join('')
+      : '<p class="w-empty">No open assignments.</p>';
+    var empCard = '<div class="card widget">' +
+      wHead('Tasks by employee', null, null) + empBody + '</div>';
+
+    // 5. Project completion
+    var projBody = d.projects.length
+      ? d.projects.slice(0, 8).map(function (p) {
+          var pct = p.completion;
+          var barColor = pct >= 100 ? '#3f8f4f' : pct >= 60 ? '#2f6fb0' : pct >= 30 ? '#C1A051' : '#e57373';
+          return '<div class="proj-row">' +
+            '<div class="row" style="margin-bottom:3px">' +
+              '<span class="small grow" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" title="' + h(p.name) + '">' + h(p.name) + '</span>' +
+              '<span class="small muted" style="margin-left:8px;flex-shrink:0">' + pct + '%</span>' +
+            '</div>' +
+            '<div class="prog" style="height:6px"><i style="width:' + pct + '%;background:' + barColor + '"></i></div>' +
+          '</div>';
+        }).join('')
+      : '<p class="w-empty">No projects yet.</p>';
+    var projCard = '<div class="card widget">' +
+      wHead('Project completion', null, null) + projBody + '</div>';
+
+    // 6. Recently updated
+    var recentBody = w.recentlyUpdated.length
+      ? '<ul class="widget-list">' + w.recentlyUpdated.map(function (t) {
+          return '<li onclick="App.openTask(\'' + h(t.id) + '\')">' +
+            '<span class="wt">' +
+              '<span class="badge ' + stageClass(t.stage) + '" style="font-size:10px;padding:1px 5px">' + h(t.stage) + '</span> ' +
+              h(t.title) +
+            '</span>' +
+            '<span class="wm">' + h(t.assignee_name) + ' · ' + fmtWhen(t.updated_at) + '</span>' +
+          '</li>';
+        }).join('') + '</ul>'
+      : '<p class="w-empty">No recent activity.</p>';
+    var recentCard = '<div class="card widget">' +
+      wHead('Recently updated', null, null) + recentBody + '</div>';
+
+    // 7. Unassigned tasks
+    var unassignedCount = w.unassigned.length;
+    var unassignedBadge = unassignedCount ? '<span class="w-badge warn">' + unassignedCount + (unassignedCount >= 8 ? '+' : '') + '</span>' : '';
+    var unassignedCard = '<div class="card widget">' +
+      wHead('Unassigned tasks', unassignedBadge, null) +
+      taskList(w.unassigned, false) + '</div>';
+
+    return '<div class="widget-grid">' +
+      overdueCard + dueTodayCard + dueWeekCard +
+      empCard + projCard + recentCard +
+      unassignedCard +
+    '</div>';
   }
 
   function stageBar(counts) {
@@ -167,11 +377,11 @@
     return '<div class="prog" style="display:flex;height:14px">' +
       Object.keys(counts).map(function (k) {
         var w = (counts[k] / total * 100).toFixed(1);
-        return '<i style="width:' + w + '%;background:' + colors[k] + '" title="' + k + ': ' + counts[k] + '"></i>';
+        return '<i style="width:' + w + '%;background:' + colors[k] + '" title="' + h(k) + ': ' + counts[k] + '"></i>';
       }).join('') + '</div>' +
       '<div class="row wrap small muted" style="margin-top:8px">' +
         Object.keys(counts).map(function (k) {
-          return '<span><span class="badge ' + stageClass(k) + '">' + k + '</span> ' + counts[k] + '</span>';
+          return '<span><span class="badge ' + stageClass(k) + '">' + h(k) + '</span> ' + counts[k] + '</span>';
         }).join('&nbsp;&nbsp;') + '</div>';
   }
 
@@ -199,26 +409,45 @@
     '</div>';
   }
 
+  function subtaskProgressHtml(t) {
+    if (!t.subtaskCount) return '';
+    var pct = t.subtaskProgress !== null && t.subtaskProgress !== undefined ? t.subtaskProgress : 0;
+    return '<div style="display:flex;align-items:center;gap:5px;margin-top:3px">' +
+      '<div class="prog" style="flex:1;max-width:80px;height:3px">' +
+        '<i style="width:' + pct + '%"></i>' +
+      '</div>' +
+      '<span class="small muted" style="white-space:nowrap">' +
+        t.subtasksDone + '/' + t.subtaskCount + ' done' +
+      '</span>' +
+    '</div>';
+  }
+
   function dashRowCells(t) {
+    var indent = (t._depth || 0) * 20;
+    var titlePrefix = t._depth > 0
+      ? '<span style="color:var(--muted,#8A7B6B);margin-right:4px">' + ('↳') + '</span>'
+      : '';
     var assignee = t.canReassign
-      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickAssignee(\''+t.id+'\',this.value)">'+assigneeOptionsHtml(t.assignee_email)+'</select>'
+      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickAssignee(\''+h(t.id)+'\',this.value)">'+assigneeOptionsHtml(t.assignee_email)+'</select>'
       : (t.assignee_name ? h(t.assignee_name) : '<span class="small muted">Unassigned</span>');
     var priority = t.canEditDef
-      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickField(\''+t.id+'\',\'priority\',this.value)">'+priorityOptionsHtml(t.priority)+'</select>'
+      ? '<select class="qedit" onclick="event.stopPropagation()" onchange="App.quickField(\''+h(t.id)+'\',\'priority\',this.value)">'+priorityOptionsHtml(t.priority)+'</select>'
       : priBadge(t.priority);
     var due = t.canEditDef
-      ? '<input type="date" class="qedit" onclick="event.stopPropagation()" value="'+h(fmtDate(t.due_date))+'" onchange="App.quickField(\''+t.id+'\',\'due_date\',this.value)">'
+      ? '<input type="date" class="qedit" onclick="event.stopPropagation()" value="'+h(fmtDate(t.due_date))+'" onchange="App.quickField(\''+h(t.id)+'\',\'due_date\',this.value)">'
       : '<span class="small">'+dueCell(t)+'</span>';
-    return '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><b>'+h(t.title)+'</b>'+(t.parent_task_id?' <span class="small muted">(subtask)</span>':'')+'</td>' +
-      '<td class="small" onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
+    return '<td onclick="App.openTask(\''+h(t.id)+'\')" style="cursor:pointer;padding-left:'+(16+indent)+'px">' +
+        titlePrefix+'<b>'+h(t.title)+'</b>'+subtaskProgressHtml(t)+'</td>' +
+      '<td class="small" onclick="App.openTask(\''+h(t.id)+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
       '<td class="small">'+assignee+'</td><td>'+priority+'</td><td>'+due+'</td>' +
-      '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><span class="badge '+stageClass(t.stage)+'">'+h(t.stage)+'</span></td>';
+      '<td onclick="App.openTask(\''+h(t.id)+'\')" style="cursor:pointer"><span class="badge '+stageClass(t.stage)+'">'+h(t.stage)+'</span></td>';
   }
   function renderTaskRows(tasks) {
     var host = $('#taskList'); if (!host) return;
     if (!tasks.length) { host.innerHTML = '<div class="card" style="padding:24px"><p class="muted center">No tasks match.</p></div>'; return; }
+    var ordered = buildFlatTree_(tasks);
     host.innerHTML = '<table class="tbl"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Stage</th></tr></thead><tbody>' +
-      tasks.map(function (t) { return '<tr data-task-id="'+t.id+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
+      ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
   }
   function patchDashRow(t) {
     if (!t || !t.id) return;
@@ -256,7 +485,7 @@
       '<div class="small muted">Owner: ' + h(p.owner_name) + ' · ' + p.openCount + ' open / ' + p.taskCount + ' tasks</div>' +
       '<div class="prog"><i style="width:' + p.completion + '%"></i></div>' +
       '<div class="row small"><span class="muted grow">' + p.completion + '% complete</span>' +
-        (canCreateTaskInProject(p) ? '<button class="btn gold sm" onclick="event.stopPropagation();App.newTask(\'' + p.id + '\')">+ Task</button>' : '') + '<button class="btn sm" onclick="App.openProject(\'' + p.id + '\')">Open board</button></div>' +
+        (canCreateTaskInProject(p) ? '<button class="btn gold sm" onclick="event.stopPropagation();App.newTask(\'' + h(p.id) + '\')">+ Task</button>' : '') + '<button class="btn sm" onclick="App.openProject(\'' + h(p.id) + '\')">Open board</button></div>' +
     '</div>';
   }
 
@@ -276,18 +505,18 @@
         '<div class="page-head"><button class="btn ghost sm" onclick="App.nav(\'projects\')">← Projects</button>' +
           '<h1 style="margin-left:6px">' + h(p.name) + '</h1>' +
           '<span class="badge status">' + h(p.status) + '</span><div class="spacer"></div>' +
-          (canEditProj(p) ? '<button class="btn ghost sm" onclick="App.editProject(\'' + id + '\')">Edit</button>' : '') +
-          (canAddTask ? '<button class="btn gold" onclick="App.newTask(\'' + id + '\')">+ New task</button>' : addHint) +
+          (canEditProj(p) ? '<button class="btn ghost sm" onclick="App.editProject(\'' + h(id) + '\')">Edit</button>' : '') +
+          (canAddTask ? '<button class="btn gold" onclick="App.newTask(\'' + h(id) + '\')">+ New task</button>' : addHint) +
         '</div>' +
         '<div class="board">' + S.boot.meta.stages.map(function (s) {
-          return '<div class="col"><h4>' + s + '<span>' + byStage[s].length + '</span></h4>' +
-            byStage[s].map(function (t) { return taskCard(t, subByParent[t.id] || []); }).join('') + (canAddTask && s === 'To Do' ? '<button class="btn ghost sm" style="width:100%;margin-top:4px" onclick="App.newTask(\'' + id + '\')">+ Add</button>' : '') + '</div>';
+          return '<div class="col"><h4>' + h(s) + '<span>' + byStage[s].length + '</span></h4>' +
+            byStage[s].map(function (t) { return taskCard(t, subByParent[t.id] || []); }).join('') + (canAddTask && s === 'To Do' ? '<button class="btn ghost sm" style="width:100%;margin-top:4px" onclick="App.newTask(\'' + h(id) + '\')">+ Add</button>' : '') + '</div>';
         }).join('') + '</div>';
     }).catch(errToast);
   }
 
   function taskCard(t, subs) {
-    return '<div class="tcard" onclick="App.openTask(\'' + t.id + '\')">' +
+    return '<div class="tcard" onclick="App.openTask(\'' + h(t.id) + '\')">' +
       '<div class="t">' + h(t.title) + '</div>' +
       '<div class="meta">' +
         '<span class="badge pri-' + h(t.priority) + '">' + h(t.priority) + '</span>' +
@@ -316,12 +545,16 @@
   function myTaskTable(tasks, withAssignee) {
     if (!tasks.length) return '<div class="card" style="padding:16px"><p class="muted center small">Nothing here.</p></div>';
     var head = '<tr><th>Task</th><th>Project</th>' + (withAssignee ? '<th>Assignee</th>' : '') + '<th>Priority</th><th>Due</th><th>Status</th></tr>';
+    var ordered = buildFlatTree_(tasks);
     return '<table class="tbl"><thead>' + head + '</thead><tbody>' +
-      tasks.map(function (t) { return '<tr data-task-id="'+t.id+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table>';
+      ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table>';
   }
   function myCells(t, withAssignee) {
-    return '<td onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer"><b>'+h(t.title)+'</b>'+(t.parent_task_id?' <span class="small muted">(subtask)</span>':'')+'</td>' +
-      '<td class="small" onclick="App.openTask(\''+t.id+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
+    var indent = (t._depth || 0) * 20;
+    var prefix = t._depth > 0 ? '<span style="color:var(--muted,#8A7B6B);margin-right:4px">↳</span>' : '';
+    return '<td onclick="App.openTask(\''+h(t.id)+'\')" style="cursor:pointer;padding-left:'+(16+indent)+'px">' +
+        prefix+'<b>'+h(t.title)+'</b>'+subtaskProgressHtml(t)+'</td>' +
+      '<td class="small" onclick="App.openTask(\''+h(t.id)+'\')" style="cursor:pointer">'+h(t.project_name||t.project_id)+'</td>' +
       (withAssignee ? '<td class="small">'+(t.assignee_name?h(t.assignee_name):'<span class="small muted">Unassigned</span>')+'</td>' : '') +
       '<td>'+priBadge(t.priority)+'</td><td class="small">'+dueCell(t)+'</td><td>'+statusControl(t)+'</td>';
   }
@@ -333,6 +566,7 @@
   }
 
   function renderTaskModal(d) {
+    S.modalTaskId = d.id;
     var p = d.perms;
     var stageActions = [];
     if (p.advance && d.stage === 'To Do') stageActions.push(btn('startTask', d.id, 'Start (→ In Progress)', 'btn'));
@@ -340,7 +574,7 @@
     if (p.selfSubtask && d.stage !== 'Completed') stageActions.push(btn('approveTask', d.id, 'Mark complete', 'btn gold'));
     if (p.approve && d.stage === 'Review') {
       stageActions.push(btn('approveTask', d.id, 'Approve ✓', 'btn'));
-      stageActions.push('<button class="btn danger" onclick="App.sendBack(\'' + d.id + '\')">Send back</button>');
+      stageActions.push('<button class="btn danger" onclick="App.sendBack(\'' + h(d.id) + '\')">Send back</button>');
     }
     if (p.approve && d.stage === 'Completed') stageActions.push(btn('reopenTask', d.id, 'Reopen', 'btn ghost'));
 
@@ -368,19 +602,19 @@
 
           /* checklist */
           '<div class="section"><h4>Checklist</h4><div id="chkList">' + checklistHtml(d.checklist, p.editExecution) + '</div>' +
-            (p.editExecution ? '<div class="row" style="margin-top:8px"><input id="chkNew" placeholder="Add checklist item…"><button class="btn sm" onclick="App.addChk(\'' + d.id + '\')">Add</button></div>' : '') +
+            (p.editExecution ? '<div class="row" style="margin-top:8px"><input id="chkNew" placeholder="Add checklist item…"><button class="btn sm" onclick="App.addChk(\'' + h(d.id) + '\')">Add</button></div>' : '') +
           '</div>' +
 
           /* subtasks */
           '<div class="section"><h4>Subtasks</h4><div id="subList">' + subtasksHtml(d.subtasks) + '</div>' +
-            (p.canCreateSubtask && !d.parent_task_id ? '<button class="btn ghost sm" style="margin-top:8px" onclick="App.newSubtask(\'' + d.id + '\')">+ Add subtask</button>' : '') +
+            (p.canCreateSubtask ? '<button class="btn ghost sm" style="margin-top:8px" onclick="App.newSubtask(\'' + h(d.id) + '\')">+ Add subtask</button>' : '') +
           '</div>' +
 
           /* attachments */
           '<div class="section"><h4>Attachments</h4><div id="attList">' + attHtml(d.attachments, S.boot.user) + '</div>' +
             (p.comment ? '<div class="row wrap" style="margin-top:8px">' +
-              '<button class="btn ghost sm" onclick="App.pickFile(\'' + d.id + '\')">⬆ Upload file</button>' +
-              '<button class="btn ghost sm" onclick="App.linkFile(\'' + d.id + '\')">🔗 Link Drive file</button>' +
+              '<button class="btn ghost sm" onclick="App.pickFile(\'' + h(d.id) + '\')">⬆ Upload file</button>' +
+              '<button class="btn ghost sm" onclick="App.linkFile(\'' + h(d.id) + '\')">🔗 Link Drive file</button>' +
               '<input type="file" id="fileInput" class="hidden"></div>' : '') +
           '</div>' +
 
@@ -388,11 +622,11 @@
           '<div class="section"><h4>Comments</h4><div id="cmtList">' + commentsHtml(d.comments) + '</div>' +
             (p.comment ? '<div style="margin-top:8px"><textarea id="cmtNew" placeholder="Write a comment… use @name to notify"></textarea>' +
               '<div class="row" style="margin-top:6px"><span class="small muted grow">Tip: type @ then a teammate\'s name</span>' +
-              '<button class="btn sm" onclick="App.addCmt(\'' + d.id + '\')">Comment</button></div></div>' : '') +
+              '<button class="btn sm" onclick="App.addCmt(\'' + h(d.id) + '\')">Comment</button></div></div>' : '') +
           '</div>' +
 
           '<div class="section"><h4>History</h4>' + activityHtml(d.activity) + '</div>' +
-          (p.editDefinition ? '<div class="section"><button class="btn danger sm" onclick="App.deleteTask(\'' + d.id + '\')">Delete task</button></div>' : '') +
+          (p.editDefinition ? '<div class="section"><button class="btn danger sm" onclick="App.deleteTask(\'' + h(d.id) + '\')">Delete task</button></div>' : '') +
         '</div>' +
       '</div></div>';
     $('#modalHost').innerHTML = html;
@@ -408,29 +642,33 @@
         '<label class="fld grow"><span>Due date</span><input type="date" id="edDue" value="' + h(fmtDate(d.due_date)) + '"></label>' +
         (p.reassign && assignOpts ? '<label class="fld grow"><span>Assignee</span><select id="edAssignee">' + assignOpts + '</select></label>' : '') +
       '</div>' +
-      '<button class="btn sm" onclick="App.saveDef(\'' + d.id + '\',' + (p.reassign && assignOpts ? 'true' : 'false') + ')">Save details</button>' +
+      '<button class="btn sm" onclick="App.saveDef(\'' + h(d.id) + '\',' + (p.reassign && assignOpts ? 'true' : 'false') + ')">Save details</button>' +
     '</div>';
   }
 
-  function btn(fn, id, label, cls) { return '<button class="' + cls + '" onclick="App.stage(\'' + fn + '\',\'' + id + '\')">' + label + '</button>'; }
+  function btn(fn, id, label, cls) { return '<button class="' + cls + '" onclick="App.stage(\'' + h(fn) + '\',\'' + h(id) + '\')">' + label + '</button>'; }
 
   function checklistHtml(items, editable) {
     if (!items.length) return '<p class="small muted">No checklist items.</p>';
     return items.map(function (c) {
       return '<div class="chk' + (c.done ? ' done' : '') + '">' +
         '<input type="checkbox"' + (c.done ? ' checked' : '') + (editable ? '' : ' disabled') +
-          ' onchange="App.toggleChk(\'' + c.id + '\',this.checked)">' +
+          ' onchange="App.toggleChk(\'' + h(c.id) + '\',this.checked)">' +
         '<span class="grow">' + h(c.text) + '</span>' +
-        (editable ? '<button class="x small" onclick="App.delChk(\'' + c.id + '\')">×</button>' : '') + '</div>';
+        (editable ? '<button class="x small" onclick="App.delChk(\'' + h(c.id) + '\')">×</button>' : '') + '</div>';
     }).join('');
   }
-  function subtasksHtml(subs) {
-    if (!subs.length) return '<p class="small muted">No subtasks.</p>';
+  function subtasksHtml(subs, depth) {
+    depth = depth || 0;
+    if (!subs || !subs.length) return depth === 0 ? '<p class="small muted">No subtasks.</p>' : '';
     return subs.map(function (t) {
-      return '<div class="tcard sub" onclick="App.openTask(\'' + t.id + '\')">' +
+      var indent = depth * 16;
+      return '<div class="tcard sub" style="margin-left:' + indent + 'px" onclick="App.openTask(\'' + h(t.id) + '\')">' +
         '<div class="row"><span class="grow"><b>' + h(t.title) + '</b></span>' +
         '<span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span></div>' +
-        '<div class="small muted">' + h(t.assignee_name) + (t.due_date ? ' · due ' + fmtDate(t.due_date) : '') + '</div></div>';
+        '<div class="small muted">' + h(t.assignee_name) + (t.due_date ? ' · due ' + fmtDate(t.due_date) : '') + '</div>' +
+        subtasksHtml(t.subtasks || [], depth + 1) +
+      '</div>';
     }).join('');
   }
   function attHtml(atts, user) {
@@ -438,9 +676,9 @@
     return atts.map(function (a) {
       var canDel = a.uploaded_by === user.email || user.level === 'L1';
       return '<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line-soft)">' +
-        '<span class="grow"><a href="' + h(a.drive_url) + '" target="_blank">' + h(a.file_name) + '</a> ' +
+        '<span class="grow"><a href="' + safeUrl(a.drive_url) + '" target="_blank" rel="noopener noreferrer">' + h(a.file_name) + '</a> ' +
         '<span class="small muted">(' + h(a.kind) + ')</span></span>' +
-        (canDel ? '<button class="x small" onclick="App.delAtt(\'' + a.id + '\')">×</button>' : '') + '</div>';
+        (canDel ? '<button class="x small" onclick="App.delAtt(\'' + h(a.id) + '\')">×</button>' : '') + '</div>';
     }).join('');
   }
   function commentsHtml(cmts) {
@@ -448,17 +686,42 @@
     return cmts.map(function (c) {
       return '<div class="cmt"><div class="row"><span class="who grow">' + h(c.author_name) +
         '</span><span class="when">' + fmtWhen(c.created_at) + (c.edited_at ? ' · edited' : '') + '</span>' +
-        (c.mine ? ' <button class="x small" onclick="App.delCmt(\'' + c.id + '\')">×</button>' : '') + '</div>' +
-        '<div class="bd">' + mention(h(c.body)) + '</div></div>';
+        (c.mine ? ' <button class="x small" onclick="App.delCmt(\'' + h(c.id) + '\')">×</button>' : '') + '</div>' +
+        '<div class="bd">' + sanitizeMention(c.body) + '</div></div>';
     }).join('');
   }
-  function mention(escaped) { return escaped.replace(/@([\w.\-]+(?:@[\w.\-]+)?)/g, '<span class="mention">@$1</span>'); }
+  function histDotClass(action) {
+    switch (action) {
+      case 'task.create':
+      case 'subtask.create':    return 'hd-create';
+      case 'task.stage':        return 'hd-status';
+      case 'task.reassign':     return 'hd-assign';
+      case 'task.priority':     return 'hd-priority';
+      case 'task.due_date':     return 'hd-due';
+      case 'comment.add':
+      case 'comment.delete':    return 'hd-comment';
+      case 'checklist.add':
+      case 'checklist.toggle':  return 'hd-check';
+      case 'attachment.upload':
+      case 'attachment.link':
+      case 'attachment.delete': return 'hd-attach';
+      case 'task.delete':       return 'hd-delete';
+      default:                  return 'hd-default';
+    }
+  }
+
   function activityHtml(items) {
     if (!items || !items.length) return '<p class="small muted">No activity yet.</p>';
-    return items.map(function (a) {
-      return '<div class="cmt"><div class="row"><span class="who grow">'+h(a.actor_name)+'</span><span class="when">'+fmtWhen(a.created_at)+'</span></div>' +
-        '<div class="bd small">'+h(a.text)+'</div></div>';
-    }).join('');
+    return '<div class="hist-timeline">' +
+      items.map(function (a) {
+        return '<div class="hist-entry">' +
+          '<span class="hist-dot ' + histDotClass(a.action) + '"></span>' +
+          '<span class="hist-who">' + h(a.actor_name) + '</span>' +
+          '<span class="hist-when">' + fmtWhen(a.created_at) + '</span>' +
+          '<div class="hist-text">' + h(a.text) + '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
   }
 
   /* ---------- actions exposed to inline handlers ---------- */
@@ -466,8 +729,12 @@
     nav: navigate,
     openTask: openTask,
     openProject: openProject,
-    closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; },
+    closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; S.modalTaskId = null; },
     bgClose: function (e) { if (e.target.classList.contains('overlay')) App.closeModal(); },
+    closeConfirm: function (e) {
+      if (e && !e.target.classList.contains('overlay')) return;
+      var host = $('#confirmHost'); if (host) host.innerHTML = '';
+    },
 
     /* filters */
     applyFilters: function () {
@@ -480,6 +747,12 @@
     },
     debounceFilter: function () { clearTimeout(App._dt); App._dt = setTimeout(App.applyFilters, 350); },
     clearFilters: function () { S.filters = {}; renderDashboard(); },
+    setDueFilter: function (val) {
+      S.filters.due = val;
+      var sel = $('#fdue'); if (sel) sel.value = val;
+      App.applyFilters();
+      var tl = $('#taskList'); if (tl) tl.scrollIntoView({ behavior: 'smooth' });
+    },
 
     /* projects */
     newProject: function () {
@@ -498,12 +771,13 @@
     editProject: function (id) {
       call('listProjects').then(function (ps) {
         var p = ps.filter(function(x){return x.id===id;})[0]; if (!p) return;
+        S._editProj = p; // stash for deleteProject confirmation
         modal('Edit project',
           '<label class="fld"><span>Name</span><input id="pName" value="' + h(p.name) + '"></label>' +
           '<label class="fld"><span>Description</span><textarea id="pDesc">' + h(p.description||'') + '</textarea></label>' +
           '<label class="fld"><span>Status</span><select id="pStatus">' +
             S.boot.meta.projectStatus.map(function(s){return '<option'+(s===p.status?' selected':'')+'>'+s+'</option>';}).join('') + '</select></label>' +
-          '<button class="btn danger sm" style="margin-top:8px" onclick="App.deleteProject(\'' + id + '\')">Delete project</button>',
+          '<button class="btn danger sm" style="margin-top:8px" onclick="App.deleteProject(\'' + h(id) + '\')">Delete project</button>',
           'Save', function () {
             return call('updateProject', id, { name: $('#pName').value, description: $('#pDesc').value, status: $('#pStatus').value })
               .then(function () { App.closeModal(); toast('Saved'); openProject(id); });
@@ -511,8 +785,20 @@
       });
     },
     deleteProject: function (id) {
-      if (!confirm('Delete this project and all its tasks? This cannot be undone.')) return;
-      call('deleteProject', id).then(function () { App.closeModal(); toast('Project deleted'); navigate('projects'); }).catch(errToast);
+      var p = S._editProj || {};
+      var name = p.name || _projCache[id] || 'this project';
+      var taskCount = p.taskCount || 0;
+      var body =
+        '<p>You are about to permanently delete <b>' + h(name) + '</b>.</p>' +
+        (taskCount > 0
+          ? '<div class="warn-box">⚠ This will also permanently delete all <b>' + taskCount + ' task' + (taskCount !== 1 ? 's' : '') + '</b> in this project, including every subtask, checklist, comment, and attachment.</div>'
+          : '') +
+        '<p class="small muted" style="margin-top:8px">This action cannot be undone.</p>';
+      confirmDanger('Delete project?', body, 'Yes, delete project', function () {
+        call('deleteProject', id).then(function () {
+          App.closeModal(); toast('Project deleted'); navigate('projects');
+        }).catch(errToast);
+      });
     },
 
     /* tasks */
@@ -551,8 +837,25 @@
       chain.then(function () { toast('Saved'); openTask(id); refreshCurrentList(); }).catch(errToast);
     },
     deleteTask: function (id) {
-      if (!confirm('Delete this task?')) return;
-      call('deleteTask', id).then(function () { App.closeModal(); toast('Task deleted'); refreshCurrentList(); }).catch(errToast);
+      var t = window._task || {};
+      var subCount = (t.subtasks || []).length;
+      var chkCount = (t.checklist || []).length;
+      var attCount = (t.attachments || []).length;
+      var extras = [];
+      if (subCount) extras.push(subCount + ' subtask' + (subCount !== 1 ? 's' : ''));
+      if (chkCount) extras.push(chkCount + ' checklist item' + (chkCount !== 1 ? 's' : ''));
+      if (attCount) extras.push(attCount + ' attachment' + (attCount !== 1 ? 's' : ''));
+      var body =
+        '<p>You are about to permanently delete <b>&ldquo;' + h(t.title || 'this task') + '&rdquo;</b>.</p>' +
+        (extras.length
+          ? '<div class="warn-box">⚠ This will also permanently delete its ' + extras.join(', ') + ' and all comments.</div>'
+          : '<p class="small muted">All comments will also be removed.</p>') +
+        '<p class="small muted" style="margin-top:8px">This action cannot be undone.</p>';
+      confirmDanger('Delete task?', body, 'Yes, delete task', function () {
+        call('deleteTask', id).then(function () {
+          App.closeModal(); toast('Task deleted'); refreshCurrentList();
+        }).catch(errToast);
+      });
     },
     stage: function (fn, id) {
       var f = fn === 'reopenTask' ? function(){return call('moveStage', id, 'In Progress');} : function(){return call(fn, id);};
@@ -576,7 +879,14 @@
       var v = $('#cmtNew').value.trim(); if (!v) return;
       call('addComment', taskId, v).then(function (d) { renderTaskModal(d); refreshBell(); }).catch(errToast);
     },
-    delCmt: function (id) { var t = window._task; call('deleteComment', id).then(function (d){ renderTaskModal(d); }).catch(errToast); },
+    delCmt: function (id) {
+      confirmDanger(
+        'Delete comment?',
+        '<p>This comment will be permanently removed and cannot be recovered.</p>',
+        'Delete comment',
+        function () { call('deleteComment', id).then(function (d) { renderTaskModal(d); }).catch(errToast); }
+      );
+    },
 
     /* attachments */
     pickFile: function (taskId) {
@@ -599,16 +909,111 @@
       var label = prompt('Label (optional):') || '';
       call('linkAttachment', taskId, url, label).then(function (d) { toast('Linked'); renderTaskModal(d); }).catch(errToast);
     },
-    delAtt: function (id) { call('deleteAttachment', id).then(function (d){ renderTaskModal(d); }).catch(errToast); },
+    delAtt: function (id) {
+      var att = ((window._task && window._task.attachments) || []).filter(function (a) { return a.id === id; })[0] || {};
+      var isUploaded = att.kind === 'uploaded';
+      var body =
+        '<p><b>' + h(att.file_name || 'This attachment') + '</b> will be removed from this task.</p>' +
+        (isUploaded
+          ? '<div class="warn-box">⚠ Because this file was uploaded through the app, it will also be <b>permanently deleted from Google Drive</b>.</div>'
+          : '<p class="small muted">This is a linked file — only the link is removed; the original file in Drive is not affected.</p>') +
+        '<p class="small muted" style="margin-top:8px">This action cannot be undone.</p>';
+      confirmDanger('Remove attachment?', body, 'Yes, remove', function () {
+        call('deleteAttachment', id).then(function (d) { renderTaskModal(d); }).catch(errToast);
+      });
+    },
 
     /* admin */
     addUser: function () {
-      var email = $('#uEmail').value.trim(), name = $('#uName').value.trim(), level = $('#uLevel').value;
+      var email = ($('#uEmail') || {}).value.trim();
+      var name  = ($('#uName')  || {}).value.trim();
+      var level = ($('#uLevel') || {}).value;
+      var phone = ($('#uPhone') || {}).value.trim();
       if (!email) return toast('Email required', true);
-      call('addUser', email, name, level).then(function () { toast('User added'); renderAdmin(); }).catch(errToast);
+      if (phone && !/^\+[1-9]\d{6,14}$/.test(phone)) {
+        return toast('Invalid mobile number. Use international format: +91XXXXXXXXXX', true);
+      }
+      call('addUser', email, name, level, phone).then(function () { toast('User saved'); renderAdmin(); }).catch(errToast);
     },
     setLevel: function (email, level) { call('updateUser', email, { level: level }).then(function(){ toast('Updated'); renderAdmin(); }).catch(errToast); },
     toggleActive: function (email, active) { call('updateUser', email, { active: active }).then(function(){ toast(active?'Activated':'Deactivated'); renderAdmin(); }).catch(errToast); },
+    savePhone: function (email) {
+      var inp = document.getElementById('ph_' + email); if (!inp) return;
+      call('updateUserPhone', email, inp.value.trim()).then(function () { toast('Phone saved'); }).catch(errToast);
+    },
+    /* ---------- WhatsApp admin ---------- */
+    toggleEm: function (enabled) {
+      call('toggleEmail', enabled).then(function (r) {
+        toast('Email notifications ' + (r.enabled ? 'enabled' : 'disabled'));
+        var lbl = document.querySelector('#emEnabled + span b');
+        if (lbl) lbl.textContent = r.enabled ? 'Enabled' : 'Disabled';
+      }).catch(errToast);
+    },
+    toggleWa: function (enabled) {
+      call('toggleWhatsApp', enabled).then(function (r) {
+        toast('WhatsApp ' + (r.enabled ? 'enabled' : 'disabled'));
+        var lbl = document.querySelector('#waEnabled + span b');
+        if (lbl) lbl.textContent = r.enabled ? 'Enabled' : 'Disabled';
+      }).catch(errToast);
+    },
+    saveWaConfig: function () {
+      var cfg = {
+        provider: ($('#waProvider') || {}).value || 'twilio',
+        apiUrl:   ($('#waApiUrl')  || {}).value || '',
+        from:     ($('#waFrom')    || {}).value || ''
+      };
+      var key = ($('#waApiKey') || {}).value || '';
+      if (key) cfg.apiKey = key;
+      call('saveWhatsAppConfig', cfg).then(function () {
+        toast('WhatsApp config saved');
+        if ($('#waApiKey')) $('#waApiKey').value = '';
+      }).catch(errToast);
+    },
+    testWa: function () {
+      var phone = prompt('Enter phone number to test (e.g. +919876543210):');
+      if (!phone) return;
+      toast('Sending test message…');
+      call('testWhatsApp', phone.trim()).then(function (r) {
+        toast(r.ok ? 'Test message sent!' : 'Test failed — check the message log.', !r.ok);
+      }).catch(errToast);
+    },
+    loadWaLogs: function () {
+      var box = $('#waLog'); if (!box) return;
+      box.innerHTML = '<div class="spinner"></div>';
+      call('listWaLogs', 30).then(function (rows) {
+        if (!rows.length) { box.innerHTML = '<p class="small muted">No messages logged yet.</p>'; return; }
+        box.innerHTML =
+          '<h4 style="margin:0 0 10px">Message log (last 30)</h4>' +
+          '<div style="overflow-x:auto"><table class="tbl" style="font-size:12px">' +
+            '<thead><tr><th>Time</th><th>To</th><th>Phone</th><th>Message</th><th>Status</th><th>Attempts</th><th>Error</th></tr></thead><tbody>' +
+            rows.map(function (r) {
+              var statusCls = r.status === 'sent' ? 'stage-completed' : 'stage-todo';
+              return '<tr>' +
+                '<td class="small muted" style="white-space:nowrap">' + h(fmtWhen(r.created_at)) + '</td>' +
+                '<td class="small">' + h(r.recipient_email) + '</td>' +
+                '<td class="small">' + h(r.recipient_phone) + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + h(r.message) + '</td>' +
+                '<td><span class="badge ' + statusCls + '">' + h(r.status) + '</span></td>' +
+                '<td style="text-align:center">' + h(r.attempts) + '</td>' +
+                '<td class="small muted" style="color:#b91c1c;max-width:160px;overflow:hidden;text-overflow:ellipsis">' + h(r.error || '') + '</td>' +
+              '</tr>';
+            }).join('') +
+          '</tbody></table></div>';
+      }).catch(errToast);
+    },
+    confirmDeactivate: function (email) {
+      var u = (S.boot.roster || []).filter(function (x) { return x.email === email; })[0] || {};
+      var name = u.name || email;
+      var body =
+        '<p>You are about to deactivate <b>' + h(name) + '</b> (' + h(email) + ').</p>' +
+        '<div class="warn-box">⚠ They will immediately lose access to this system and will not be able to sign in.</div>' +
+        '<p class="small muted" style="margin-top:8px">You can reactivate them at any time from the Team page.</p>';
+      confirmDanger('Deactivate team member?', body, 'Yes, deactivate', function () {
+        call('updateUser', email, { active: false }).then(function () {
+          toast('Deactivated'); renderAdmin();
+        }).catch(errToast);
+      });
+    },
 
     /* notifications */
     toggleNotif: function (e) { if (e) e.stopPropagation(); S.notifOpen = !S.notifOpen; if (S.notifOpen) loadNotifs(); else $('#notifPop').innerHTML = ''; },
@@ -629,6 +1034,28 @@
             '<button class="btn gold" id="modalOk">' + h(okLabel) + '</button></div>' +
         '</div></div></div>';
     $('#modalOk').onclick = function () { var r = onOk(); if (r && r.catch) r.catch(errToast); };
+  }
+
+  /* ---------- danger confirmation modal ---------- */
+  // Renders into #confirmHost, which sits above #modalHost (z-index:500).
+  // This lets a confirm dialog appear on top of an open task modal without
+  // destroying its content — Cancel leaves the task modal fully intact.
+  function confirmDanger(title, bodyHtml, okLabel, onConfirm) {
+    var host = $('#confirmHost'); if (!host) return;
+    host.innerHTML =
+      '<div class="overlay" onclick="App.closeConfirm(event)"><div class="modal" style="max-width:460px">' +
+        '<div class="head">' +
+          '<h2 class="grow">⚠ ' + h(title) + '</h2>' +
+          '<button class="x" onclick="App.closeConfirm()">×</button>' +
+        '</div>' +
+        '<div class="body">' + bodyHtml +
+          '<div class="row" style="margin-top:18px;justify-content:flex-end;gap:8px">' +
+            '<button class="btn ghost" onclick="App.closeConfirm()">Cancel</button>' +
+            '<button class="btn danger" id="confirmOk">' + h(okLabel) + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div></div>';
+    $('#confirmOk').onclick = function () { App.closeConfirm(); onConfirm(); };
   }
 
   function taskForm(title, parentId, projectId) {
@@ -655,8 +1082,39 @@
       });
   }
 
+  /* ---------- change-detection sync ---------- */
+
+  /* Fetch the latest ActivityLog token and store it as the known baseline.
+     Call this after any user-triggered mutation so the next poll cycle won't
+     fire a redundant refresh for a change the current user just made. */
+  function syncReset() {
+    call('getChangeToken').then(function (r) { _sync.token = r.token; }).catch(function () {});
+  }
+
+  /* Called every 30 s. Reads the token; if it differs from the last known
+     value another user made a change, so we refresh the current view silently. */
+  function syncTick() {
+    if (_sync.flying) return;
+    var ae = document.activeElement;
+    // Skip when the user is actively typing to avoid interrupting input
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) return;
+    _sync.flying = true;
+    call('getChangeToken').then(function (r) {
+      _sync.flying = false;
+      if (_sync.token === null) { _sync.token = r.token; return; } // first call, just set baseline
+      if (r.token !== _sync.token) {
+        _sync.token = r.token;
+        refreshCurrentList();
+        refreshBell();
+        // Refresh an open task modal so its content stays current
+        if (S.modalTaskId && $('#modalHost').children.length) openTask(S.modalTaskId);
+        toast('↺ Updated');
+      }
+    }).catch(function () { _sync.flying = false; });
+  }
+
   function refreshCurrentList() {
-    if (S.view === 'projects' && S.projectId) { /* board refresh happens on demand */ }
+    syncReset(); // keep token in sync so next poll won't double-refresh
     if (S.view === 'dashboard') App.applyFilters();
     if (S.view === 'mytasks') renderMyTasks();
     if (S.view === 'projects' && S.projectId) openProject(S.projectId);
@@ -665,26 +1123,90 @@
   /* ---------- admin ---------- */
   function renderAdmin() {
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
-    call('listUsers').then(function (us) {
+    Promise.all([call('listUsersAdmin'), call('getWhatsAppConfig'), call('getEmailConfig')]).then(function (res) {
+      var us  = res[0];
+      var wac = res[1];
+      var emc = res[2];
       main.innerHTML =
         '<div class="page-head"><h1>Team &amp; access</h1></div>' +
+
+        /* Add member form */
         '<div class="card" style="padding:16px;margin-bottom:18px"><h4 style="margin-bottom:8px">Add team member</h4>' +
-          '<div class="filters" style="margin:0">' +
+          '<div class="filters" style="margin:0;flex-wrap:wrap">' +
             '<input id="uEmail" placeholder="email@gmail.com">' +
             '<input id="uName" placeholder="Full name">' +
             '<select id="uLevel"><option value="L3">L3 · Team Member</option><option value="L2">L2 · Project Lead</option><option value="L1">L1 · Director</option><option value="L4">L4 · Junior Member</option></select>' +
+            '<input id="uPhone" placeholder="+91XXXXXXXXXX (optional)" style="max-width:200px">' +
             '<button class="btn gold" onclick="App.addUser()">Add / update</button>' +
-          '</div><p class="small muted" style="margin-top:8px">Only emails listed here (and active) can sign in.</p></div>' +
-        '<table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Status</th><th></th></tr></thead><tbody>' +
+          '</div>' +
+          '<p class="small muted" style="margin-top:8px">Only emails listed here (and active) can sign in. Mobile number must be in international format (+91…).</p>' +
+        '</div>' +
+
+        /* Team table with phone column */
+        '<div class="card" style="overflow:auto;margin-bottom:24px">' +
+        '<table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Mobile number</th><th>Status</th><th></th></tr></thead><tbody>' +
           us.map(function (u) {
-            return '<tr><td><b>' + h(u.name) + '</b></td><td class="small">' + h(u.email) + '</td>' +
+            return '<tr>' +
+              '<td><b>' + h(u.name) + '</b></td>' +
+              '<td class="small">' + h(u.email) + '</td>' +
               '<td><select onchange="App.setLevel(\'' + h(u.email) + '\',this.value)">' +
-                ['L1','L2','L3','L4'].map(function(l){return '<option value="'+l+'"'+(u.level===l?' selected':'')+'>'+l+'</option>';}).join('') + '</select></td>' +
+                ['L1','L2','L3','L4'].map(function(l){return '<option value="'+l+'"'+(u.level===l?' selected':'')+'>'+l+'</option>';}).join('') +
+              '</select></td>' +
+              '<td>' +
+                '<div class="row" style="gap:4px">' +
+                  '<input id="ph_' + h(u.email) + '" value="' + h(u.phone||'') + '" placeholder="+91…" style="width:130px;font-size:12px">' +
+                  '<button class="btn ghost sm" onclick="App.savePhone(\'' + h(u.email) + '\')">Save</button>' +
+                '</div>' +
+              '</td>' +
               '<td>' + (u.active ? '<span class="badge stage-completed">Active</span>' : '<span class="badge stage-todo">Inactive</span>') + '</td>' +
               '<td>' + (u.active
-                ? '<button class="btn danger sm" onclick="App.toggleActive(\'' + h(u.email) + '\',false)">Deactivate</button>'
-                : '<button class="btn ghost sm" onclick="App.toggleActive(\'' + h(u.email) + '\',true)">Reactivate</button>') + '</td></tr>';
-          }).join('') + '</tbody></table>';
+                ? '<button class="btn danger sm" onclick="App.confirmDeactivate(\'' + h(u.email) + '\')">Deactivate</button>'
+                : '<button class="btn ghost sm" onclick="App.toggleActive(\'' + h(u.email) + '\',true)">Reactivate</button>') + '</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table></div>' +
+
+        /* Email notification settings */
+        '<div class="card" style="padding:18px;margin-bottom:18px">' +
+          '<div class="row" style="align-items:center;margin-bottom:10px">' +
+            '<h3 style="margin:0">Email notifications</h3>' +
+            '<span class="spacer"></span>' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+              '<input type="checkbox" id="emEnabled"' + (emc.enabled ? ' checked' : '') + ' onchange="App.toggleEm(this.checked)">' +
+              '<span class="small"><b>' + (emc.enabled ? 'Enabled' : 'Disabled') + '</b></span>' +
+            '</label>' +
+          '</div>' +
+          '<p class="small muted" style="margin:0">When disabled, no emails are sent for task assignments, stage changes, comments, or daily digests. In-app notifications continue to work normally.</p>' +
+        '</div>' +
+
+        /* WhatsApp settings */
+        '<div class="card" style="padding:18px;margin-bottom:18px">' +
+          '<div class="row" style="margin-bottom:14px;align-items:center">' +
+            '<h3 style="margin:0">WhatsApp notifications</h3>' +
+            '<span class="spacer"></span>' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+              '<input type="checkbox" id="waEnabled"' + (wac.enabled ? ' checked' : '') + ' onchange="App.toggleWa(this.checked)">' +
+              '<span class="small"><b>' + (wac.enabled ? 'Enabled' : 'Disabled') + '</b></span>' +
+            '</label>' +
+          '</div>' +
+          '<div class="row wrap" style="gap:10px;margin-bottom:10px">' +
+            '<label class="fld" style="min-width:160px"><span>Provider</span>' +
+              '<select id="waProvider">' +
+                ['twilio','wati','meta'].map(function(p){return '<option'+(wac.provider===p?' selected':'')+'>'+p+'</option>';}).join('') +
+              '</select></label>' +
+            '<label class="fld grow"><span>API key / token ' + (wac.hasApiKey ? '(saved — paste to replace)' : '(not set)') + '</span>' +
+              '<input id="waApiKey" type="password" placeholder="Leave blank to keep existing"></label>' +
+            '<label class="fld" style="min-width:220px"><span>API URL (WATI / Meta only)</span>' +
+              '<input id="waApiUrl" value="' + h(wac.apiUrl) + '" placeholder="https://…"></label>' +
+            '<label class="fld" style="min-width:180px"><span>Sender / From number</span>' +
+              '<input id="waFrom" value="' + h(wac.from) + '" placeholder="whatsapp:+14155238886"></label>' +
+          '</div>' +
+          '<div class="row" style="gap:8px;margin-top:4px">' +
+            '<button class="btn gold" onclick="App.saveWaConfig()">Save config</button>' +
+            '<button class="btn ghost" onclick="App.testWa()">Send test message</button>' +
+            '<button class="btn ghost" onclick="App.loadWaLogs()">View message log</button>' +
+          '</div>' +
+          '<div id="waLog" style="margin-top:14px"></div>' +
+        '</div>';
     }).catch(errToast);
   }
 
@@ -701,7 +1223,7 @@
         '<div class="row" style="padding:10px 14px;border-bottom:1px solid var(--line)"><b class="grow">Notifications</b>' +
           '<button class="btn ghost sm" onclick="App.markAll()">Mark all read</button></div>' +
         (list.length ? list.map(function (n) {
-          return '<div class="notif' + (n.read ? '' : ' unread') + '" onclick="App.openFromNotif(\'' + n.id + '\',\'' + (n.task_id||'') + '\')">' +
+          return '<div class="notif' + (n.read ? '' : ' unread') + '" onclick="App.openFromNotif(\'' + h(n.id) + '\',\'' + h(n.task_id||'') + '\')">' +
             '<div class="nt">' + h(n.title) + '</div><div class="nb">' + h(n.body) + '</div>' +
             '<div class="small muted">' + fmtWhen(n.created_at) + '</div></div>';
         }).join('') : '<div style="padding:18px" class="muted small center">No notifications.</div>') + '</div>';

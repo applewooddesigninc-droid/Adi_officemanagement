@@ -54,13 +54,39 @@ function markAllNotificationsRead() {
   return 0;
 }
 
-/* ---------------- Email ---------------- */
+/* ---------------- Email toggle ---------------- */
+
+/** Returns false only when the Director has explicitly disabled email. Default is on. */
+function emailEnabled_() {
+  var v = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP.EMAIL_ENABLED);
+  return v !== 'false'; // default true when property is absent
+}
+
+/** Returns current email-enabled state. Director only. */
+function getEmailConfig() {
+  var me = requireUser();
+  if (!canManageUsers(me)) throw new Error('Director only.');
+  return { enabled: emailEnabled_() };
+}
+
+/** Enable or disable all outbound email. Director only. */
+function toggleEmail(enabled) {
+  var me = requireUser();
+  if (!canManageUsers(me)) throw new Error('Director only.');
+  PropertiesService.getScriptProperties()
+    .setProperty(CONFIG.PROP.EMAIL_ENABLED, enabled ? 'true' : 'false');
+  logActivity(me.email, 'email.toggle', 'system', 'email', enabled ? 'enabled' : 'disabled');
+  return { enabled: !!enabled };
+}
+
+/* ---------------- Email send ---------------- */
 
 function getWebAppUrl() {
   try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
 }
 
 function sendMail_(email, subject, body, taskId) {
+  if (!emailEnabled_()) return false; // globally disabled by admin
   try {
     var url = getWebAppUrl();
     var link = url ? (url + (taskId ? '?task=' + encodeURIComponent(taskId) : '')) : '';

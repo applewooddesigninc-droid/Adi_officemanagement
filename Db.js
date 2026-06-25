@@ -115,11 +115,25 @@ var Db = (function () {
     });
   }
 
+  /**
+   * Prepare a value for writing to a Sheets cell.
+   *
+   * Formula injection defence: Sheets executes any string whose first character
+   * is =, +, -, or @ as a formula (e.g. =IMPORTXML(...) can exfiltrate data).
+   * Prefixing with a leading apostrophe forces literal-text mode.  The apostrophe
+   * is stored as a cell "prefix" — it is invisible in the cell and is NOT returned
+   * by getValues(), so round-trips are lossless.  Booleans, numbers, and Dates
+   * are passed through as-is because Sheets handles their types natively and none
+   * of them can trigger formula execution.
+   */
   function toCell_(v) {
     if (v === null || v === undefined) return '';
-    if (v === true) return true;
-    if (v === false) return false;
-    return v;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number')  return v;
+    if (v instanceof Date)      return v;
+    var s = String(v);
+    if (s.length > 0 && '=+-@'.indexOf(s[0]) !== -1) return "'" + s;
+    return s;
   }
 
   function withLock_(fn) {
