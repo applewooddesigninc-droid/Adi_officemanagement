@@ -222,7 +222,7 @@
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
-          '<span class="ver-tag" title="UI build">m5</span>' +
+          '<span class="ver-tag" title="UI build">m6</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
@@ -272,19 +272,30 @@
         ['Awaiting my approval', st.awaitingApproval, ''], ['Avg completion', st.completionAvg + '%', '']
       ];
       var roster = S.boot.roster;
-      main.innerHTML =
-        '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
+      var headHtml = '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
           (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') +
-        '</div>' +
-        '<div class="stat-grid">' + cards.map(function (c) {
+        '</div>';
+      var statsHtml = '<div class="stat-grid">' + cards.map(function (c) {
           return '<div class="card stat ' + c[2] + '"><div class="n">' + c[1] + '</div><div class="l">' + c[0] + '</div></div>';
-        }).join('') + '</div>' +
-        '<div class="card" style="padding:14px;margin-bottom:18px">' +
+        }).join('') + '</div>';
+      var workflowHtml = '<div class="card" style="padding:14px;margin-bottom:18px">' +
           '<h4 style="margin-bottom:10px">Workflow distribution</h4>' + stageBar(d.stageCounts) +
-        '</div>' +
-        renderWidgets(d) +
-        filtersBar(roster, d.projects) +
-        '<div id="taskList"></div>';
+        '</div>';
+      var widgetsHtml = renderWidgets(d);
+      var filtersHtml = filtersBar(roster, d.projects);
+
+      if (isMobile()) {
+        // Touch-first order (matches the streamlined mockup): stats → tasks first,
+        // with filters and the insight widgets tucked into collapsible sections so
+        // the actual work is what you see, not a wall of widgets.
+        var anyFilter = !!(S.filters.q || S.filters.project || S.filters.assignee || S.filters.stage || S.filters.due);
+        main.innerHTML = headHtml + statsHtml +
+          '<details class="m-collapse"' + (anyFilter ? ' open' : '') + '><summary>Filter tasks</summary>' + filtersHtml + '</details>' +
+          '<div id="taskList"></div>' +
+          '<details class="m-collapse"><summary>Insights</summary>' + workflowHtml + widgetsHtml + '</details>';
+      } else {
+        main.innerHTML = headHtml + statsHtml + workflowHtml + widgetsHtml + filtersHtml + '<div id="taskList"></div>';
+      }
       renderTaskRows(d.tasks);
     }).catch(errToast);
   }

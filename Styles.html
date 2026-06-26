@@ -305,6 +305,17 @@
   html.mob .proj{padding:16px}
   html.mob .proj h3{font-size:17px}
 
+  /* ---- Collapsible dashboard sections (Filter tasks / Insights) ---- */
+  html.mob details.m-collapse{margin-bottom:12px}
+  html.mob details.m-collapse>summary{padding:14px 16px;font-size:15px;font-weight:700;
+    color:var(--brown-dark);background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;
+    -webkit-tap-highlight-color:transparent}
+  html.mob details.m-collapse>summary::-webkit-details-marker{display:none}
+  html.mob details.m-collapse>summary::after{content:'▾';font-size:14px;color:var(--muted)}
+  html.mob details.m-collapse[open]>summary{margin-bottom:12px}
+  html.mob details.m-collapse[open]>summary::after{content:'▴'}
+
   /* ---- Badges a touch larger for legibility ---- */
   html.mob .badge{font-size:12.5px;padding:3px 10px}
 
