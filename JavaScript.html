@@ -206,7 +206,8 @@
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
         '<div class="userchip" title="' + h(u.email) + '"><span class="avatar">' + h(initials(u.name)) + '</span>' +
-          '<span>' + h(u.name) + ' · <b>' + h(u.label) + '</b></span></div>' + '<a href="' + switchAccountUrl() + '" target="_blank" style="margin-left:10px;color:#fff;font-size:12px;text-decoration:underline;opacity:.9" title="Sign in as a different Google account">Switch</a>' +
+          '<span class="name-role">' + h(u.name) + ' · <b>' + h(u.label) + '</b></span></div>' +
+          '<a class="switch-link" href="' + switchAccountUrl() + '" target="_blank" title="Sign in as a different Google account">Switch</a>' +
       '</div>' +
       '<div class="layout">' +
         '<div class="sidebar"><div class="nav" id="nav">' +
@@ -546,8 +547,8 @@
     if (!tasks.length) return '<div class="card" style="padding:16px"><p class="muted center small">Nothing here.</p></div>';
     var head = '<tr><th>Task</th><th>Project</th>' + (withAssignee ? '<th>Assignee</th>' : '') + '<th>Priority</th><th>Due</th><th>Status</th></tr>';
     var ordered = buildFlatTree_(tasks);
-    return '<table class="tbl"><thead>' + head + '</thead><tbody>' +
-      ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table>';
+    return '<div class="tbl-scroll"><table class="tbl"><thead>' + head + '</thead><tbody>' +
+      ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table></div>';
   }
   function myCells(t, withAssignee) {
     var indent = (t._depth || 0) * 20;
