@@ -86,6 +86,7 @@
   function switchAccountUrl() { var url = (S.boot && S.boot.webAppUrl) || location.href; return 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(url); }
   function fmtDate(d) { if (!d) return ''; return String(d).slice(0, 10); }
   function fmtWhen(iso) { if (!iso) return ''; return String(iso).replace('T', ' ').slice(0, 16); }
+  function isMobile() { return window.innerWidth <= 640; }
   function toast(msg, isErr) {
     var t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : ''); t.textContent = msg;
@@ -218,12 +219,19 @@
         '</div></div>' +
         '<div class="main" id="main"></div>' +
       '</div>' +
-      '<div id="notifPop"></div><div id="modalHost"></div><div id="confirmHost"></div>';
+      '<div id="notifPop"></div><div id="modalHost"></div><div id="confirmHost"></div>' +
+      '<nav class="bottom-nav" id="bottomNav">' +
+        nav.map(function (n) {
+          return '<a href="#" data-view="' + n.v + '" onclick="App.nav(\'' + n.v + '\');return false;">' +
+            '<span class="ic">' + n.ic + '</span><span class="lbl">' + n.t + '</span></a>';
+        }).join('') +
+      '</nav>' +
+      (S.boot.canCreateProject ? '<button class="fab" onclick="App.globalNewTask()" title="New task">+</button>' : '');
   }
 
   function navigate(view) {
     S.view = view;
-    [].forEach.call(document.querySelectorAll('#nav a'), function (a) {
+    [].forEach.call(document.querySelectorAll('#nav a, #bottomNav a'), function (a) {
       a.classList.toggle('active', a.getAttribute('data-view') === view);
     });
     if (view === 'dashboard') renderDashboard();
@@ -410,6 +418,30 @@
     '</div>';
   }
 
+  function taskMobileCard(t) {
+    var indent = (t._depth || 0) * 10;
+    var sub = t._depth > 0;
+    var progHtml = t.subtaskCount
+      ? '<div class="m-sub-prog"><div class="prog" style="flex:1;max-width:60px;height:3px"><i style="width:' + (t.subtaskProgress || 0) + '%"></i></div><span class="small muted">' + t.subtasksDone + '/' + t.subtaskCount + ' done</span></div>'
+      : '';
+    var dueHtml = t.due_date
+      ? (t.overdue ? '<span class="badge over">' + fmtDate(t.due_date) + '</span>' : '<span class="badge status">' + fmtDate(t.due_date) + '</span>')
+      : '';
+    return '<div class="m-task-card' + (sub ? ' sub' : '') + '" style="margin-left:' + indent + 'px" onclick="App.openTask(\'' + h(t.id) + '\')">' +
+      '<div class="m-task-title">' + (sub ? '<span class="m-task-indent">↳</span>' : '') + h(t.title) + '</div>' +
+      '<div class="m-task-meta">' +
+        (t.project_name ? '<span class="m-task-proj">' + h(t.project_name) + '</span>' : '') +
+        priBadge(t.priority) + dueHtml +
+      '</div>' +
+      progHtml +
+      '<div class="m-task-footer">' +
+        '<span class="m-assignee"><span class="m-avatar">' + h(initials(t.assignee_name || '?')) + '</span>' +
+        '<span class="m-assignee-name">' + h(t.assignee_name || 'Unassigned') + '</span></span>' +
+        '<span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span>' +
+      '</div>' +
+    '</div>';
+  }
+
   function subtaskProgressHtml(t) {
     if (!t.subtaskCount) return '';
     var pct = t.subtaskProgress !== null && t.subtaskProgress !== undefined ? t.subtaskProgress : 0;
@@ -447,8 +479,12 @@
     var host = $('#taskList'); if (!host) return;
     if (!tasks.length) { host.innerHTML = '<div class="card" style="padding:24px"><p class="muted center">No tasks match.</p></div>'; return; }
     var ordered = buildFlatTree_(tasks);
-    host.innerHTML = '<table class="tbl"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Stage</th></tr></thead><tbody>' +
-      ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
+    if (isMobile()) {
+      host.innerHTML = '<div class="m-task-list">' + ordered.map(taskMobileCard).join('') + '</div>';
+    } else {
+      host.innerHTML = '<table class="tbl"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Stage</th></tr></thead><tbody>' +
+        ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
+    }
   }
   function patchDashRow(t) {
     if (!t || !t.id) return;
@@ -545,8 +581,11 @@
   }
   function myTaskTable(tasks, withAssignee) {
     if (!tasks.length) return '<div class="card" style="padding:16px"><p class="muted center small">Nothing here.</p></div>';
-    var head = '<tr><th>Task</th><th>Project</th>' + (withAssignee ? '<th>Assignee</th>' : '') + '<th>Priority</th><th>Due</th><th>Status</th></tr>';
     var ordered = buildFlatTree_(tasks);
+    if (isMobile()) {
+      return '<div class="m-task-list">' + ordered.map(taskMobileCard).join('') + '</div>';
+    }
+    var head = '<tr><th>Task</th><th>Project</th>' + (withAssignee ? '<th>Assignee</th>' : '') + '<th>Priority</th><th>Due</th><th>Status</th></tr>';
     return '<div class="tbl-scroll"><table class="tbl"><thead>' + head + '</thead><tbody>' +
       ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+myCells(t, withAssignee)+'</tr>'; }).join('') + '</tbody></table></div>';
   }
