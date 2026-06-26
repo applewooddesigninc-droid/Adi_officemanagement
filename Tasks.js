@@ -59,25 +59,31 @@ function computeSubtreeProgress_(id, childrenOf) {
 
 /**
  * BFS over the task graph to collect every descendant ID (avoids call-stack
- * limits on very deep trees).
+ * limits on very deep trees). Builds the parent→children index once, then walks
+ * it, instead of re-scanning the whole task table at every node.
  */
 function collectAllDescendantIds_(taskId) {
+  var childrenOf = buildChildrenIndex_(Db.readAll(CONFIG.TAB.TASKS));
   var ids = [], queue = [taskId];
   while (queue.length) {
     var cur = queue.shift();
-    Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === cur; })
-      .forEach(function (c) { ids.push(c.id); queue.push(c.id); });
+    (childrenOf[cur] || []).forEach(function (c) { ids.push(c.id); queue.push(c.id); });
   }
   return ids;
 }
 
-/** Recursively load visible subtasks for the task-detail modal. */
-function loadSubtasksRecursive_(parentId, users, me) {
-  return Db.filter(CONFIG.TAB.TASKS, function (x) { return x.parent_task_id === parentId; })
+/**
+ * Recursively load visible subtasks for the task-detail modal. The parent→children
+ * index is built once at the top of the recursion and threaded down, so each level
+ * is an O(1) map hit rather than a full task-table scan.
+ */
+function loadSubtasksRecursive_(parentId, users, me, childrenOf) {
+  if (!childrenOf) childrenOf = buildChildrenIndex_(Db.readAll(CONFIG.TAB.TASKS));
+  return (childrenOf[parentId] || [])
     .filter(function (x) { return canViewTask(me, x); })
     .map(function (x) {
       var s = shapeTask_(x, users, me);
-      s.subtasks = loadSubtasksRecursive_(x.id, users, me);
+      s.subtasks = loadSubtasksRecursive_(x.id, users, me, childrenOf);
       return s;
     });
 }

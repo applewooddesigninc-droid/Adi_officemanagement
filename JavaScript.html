@@ -803,7 +803,8 @@
         assignee: ($('#fassignee')||{}).value || '', stage: ($('#fstage')||{}).value || '',
         due: ($('#fdue')||{}).value || ''
       };
-      call('getDashboard', S.filters).then(function (d) { renderTaskRows(d.tasks); }).catch(errToast);
+      // Only the table re-renders here, so fetch just the rows (not widgets/stats).
+      call('getDashboardTasks', S.filters).then(function (d) { renderTaskRows(d.tasks); }).catch(errToast);
     },
     debounceFilter: function () { clearTimeout(App._dt); App._dt = setTimeout(App.applyFilters, 350); },
     clearFilters: function () { S.filters = {}; renderDashboard(); },

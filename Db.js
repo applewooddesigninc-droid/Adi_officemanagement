@@ -11,6 +11,11 @@ var Db = (function () {
   // this memoises full-tab reads within one request and is cleared on any write.
   var _cache = {};
 
+  // Per-request lookup indexes: { tab+'!'+field : { stringValue → first matching row } }.
+  // Turns the O(n) linear scan in findBy() into an O(1) map hit. Rebuilt lazily
+  // from the cached rows and dropped alongside _cache whenever the tab is written.
+  var _index = {};
+
   function ss_() {
     var id = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP.DATA_SHEET_ID);
     if (!id) throw new Error('Data Sheet not configured. Run Setup → setupApp() first.');
@@ -53,10 +58,38 @@ var Db = (function () {
     return v;
   }
 
+  /** Drop the cached rows AND any derived lookup indexes for a tab (or everything). */
+  function invalidate_(tab) {
+    if (tab) {
+      delete _cache[tab];
+      var prefix = tab + '!';
+      for (var k in _index) { if (k.indexOf(prefix) === 0) delete _index[k]; }
+    } else {
+      _cache = {};
+      _index = {};
+    }
+  }
+
+  /**
+   * Lazily build (and memoise) a { stringValue → first matching row } map for one
+   * column of a tab, so repeated lookups by that column are O(1) instead of O(n).
+   * First-match-wins mirrors the old linear findBy exactly.
+   */
+  function indexBy(tab, field) {
+    var key = tab + '!' + field;
+    if (_index[key]) return _index[key];
+    var rows = readAll(tab);
+    var map = {};
+    for (var i = 0; i < rows.length; i++) {
+      var k = String(rows[i][field]);
+      if (!map.hasOwnProperty(k)) map[k] = rows[i]; // keep first occurrence
+    }
+    _index[key] = map;
+    return map;
+  }
+
   function findBy(tab, field, value) {
-    var all = readAll(tab);
-    for (var i = 0; i < all.length; i++) if (String(all[i][field]) === String(value)) return all[i];
-    return null;
+    return indexBy(tab, field)[String(value)] || null;
   }
 
   function filter(tab, predicate) {
@@ -70,7 +103,7 @@ var Db = (function () {
       var head = headers_(tab);
       var line = head.map(function (h) { return obj.hasOwnProperty(h) ? toCell_(obj[h]) : ''; });
       sh.appendRow(line);
-      delete _cache[tab];
+      invalidate_(tab);
       return obj;
     });
   }
@@ -89,7 +122,7 @@ var Db = (function () {
             var c = head.indexOf(key);
             if (c >= 0) sh.getRange(r + 1, c + 1).setValue(toCell_(patch[key]));
           }
-          delete _cache[tab];
+          invalidate_(tab);
           return true;
         }
       }
@@ -107,7 +140,7 @@ var Db = (function () {
       for (var r = values.length - 1; r >= 1; r--) {
         if (String(values[r][idCol]) === String(idValue)) {
           sh.deleteRow(r + 1);
-          delete _cache[tab];
+          invalidate_(tab);
           return true;
         }
       }
@@ -147,12 +180,13 @@ var Db = (function () {
     ss: ss_,
     sheet: sheet_,
     readAll: readAll,
+    indexBy: indexBy,
     findBy: findBy,
     filter: filter,
     insert: insert,
     update: update,
     remove: remove,
-    invalidate: function (tab) { if (tab) { delete _cache[tab]; } else { _cache = {}; } }
+    invalidate: invalidate_
   };
 })();
 

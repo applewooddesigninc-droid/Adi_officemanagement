@@ -87,8 +87,16 @@ function deleteProject(id) {
   return { ok: true, removedTasks: tasks.length };
 }
 
+// Memoised { lowercased email → user row } map for the current request.
+// Db.readAll returns the same array reference while the Users tab is cached, so we
+// rebuild only when that reference changes (i.e. after a write invalidates it).
+var _usersIdx_ = { src: null, map: null };
 function indexUsers_() {
+  var rows = Db.readAll(CONFIG.TAB.USERS);
+  if (_usersIdx_.src === rows && _usersIdx_.map) return _usersIdx_.map;
   var map = {};
-  Db.readAll(CONFIG.TAB.USERS).forEach(function (u) { map[lc(u.email)] = u; });
+  rows.forEach(function (u) { map[lc(u.email)] = u; });
+  _usersIdx_.src = rows;
+  _usersIdx_.map = map;
   return map;
 }

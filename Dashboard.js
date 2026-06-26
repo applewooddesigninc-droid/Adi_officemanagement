@@ -115,6 +115,26 @@ function getDashboard(filters) {
 }
 
 /**
+ * Just the filtered task rows the dashboard table needs — no widgets, stats, or
+ * project rollups. The client calls this on every search keystroke / filter change
+ * (where only the table re-renders), so skipping the widget+project recomputation
+ * makes filtering and inline-edit refreshes much cheaper. Output is shaped by the
+ * same shapeTask_/applyFiltersWithAncestors_ used by getDashboard, so the rendered
+ * rows are byte-for-byte identical to getDashboard().tasks.
+ */
+function getDashboardTasks(filters) {
+  var me = requireUser();
+  filters = filters || {};
+  var users = indexUsers_();
+  var allVisible = Db.readAll(CONFIG.TAB.TASKS)
+    .filter(function (t) { return canViewTask(me, t); });
+  var childrenOf = buildChildrenIndex_(allVisible);
+  var tasks = applyFiltersWithAncestors_(allVisible, filters)
+    .map(function (t) { return shapeTask_(t, users, me, childrenOf); });
+  return { tasks: tasks };
+}
+
+/**
  * Lightweight personal lists for the My Tasks / Assigned-by-me views — far less
  * data than the whole dashboard, so these screens load quickly.
  *   assignedToMe   : open tasks assigned to me
