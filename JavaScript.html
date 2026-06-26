@@ -9,7 +9,7 @@
   var isPhoneUA = /Mobi|Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|webOS/i.test(ua)
                   || (/iPad|Macintosh/i.test(ua) && 'ontouchend' in document); // iPadOS reports as Mac
   function applyClass() {
-    var mob = isPhoneUA || window.innerWidth <= 640;
+    var mob = isPhoneUA || window.innerWidth < 768;
     document.documentElement.classList.toggle('mob', mob);
   }
   applyClass();
@@ -211,6 +211,12 @@
   /* ---------- shell ---------- */
   function renderShell() {
     var u = S.boot.user;
+    var NAV_ICON = {
+      dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
+      projects:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+      mytasks:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+      admin:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+    };
     var nav = [
       { v: 'dashboard', ic: '▦', t: 'Dashboard' },
       { v: 'projects', ic: '▣', t: 'Projects' },
@@ -222,7 +228,7 @@
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
-          '<span class="ver-tag" title="UI build">m7</span>' +
+          '<span class="ver-tag" title="UI build">m8</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
@@ -243,7 +249,7 @@
       '<nav class="bottom-nav" id="bottomNav">' +
         nav.map(function (n) {
           return '<a href="#" data-view="' + n.v + '" onclick="App.nav(\'' + n.v + '\');return false;">' +
-            '<span class="ic">' + n.ic + '</span><span class="lbl">' + n.t + '</span></a>';
+            '<span class="ic">' + (NAV_ICON[n.v] || n.ic) + '</span><span class="lbl">' + n.t + '</span></a>';
         }).join('') +
       '</nav>' +
       (S.boot.canCreateProject ? '<button class="fab" onclick="App.globalNewTask()" title="New task">+</button>' : '');
@@ -452,16 +458,32 @@
     '</div>';
   }
 
+  // The single most relevant one-tap status action for a task card, by stage.
+  function cardStageAction(t) {
+    var ns = t.nextStages || [];
+    if (!ns.length) return null;
+    if (t.stage === 'To Do' && ns.indexOf('In Progress') >= 0) return { s: 'In Progress', l: 'Start' };
+    if (ns.indexOf('Review') >= 0) return { s: 'Review', l: 'Submit' };
+    if (ns.indexOf('Completed') >= 0) return { s: 'Completed', l: t.stage === 'Review' ? 'Approve' : 'Mark done' };
+    if (ns.indexOf('In Progress') >= 0) return { s: 'In Progress', l: t.stage === 'Completed' ? 'Reopen' : 'Resume' };
+    return { s: ns[0], l: '→ ' + ns[0] };
+  }
+
   function taskMobileCard(t) {
     var indent = (t._depth || 0) * 10;
     var sub = t._depth > 0;
     var progHtml = t.subtaskCount
-      ? '<div class="m-sub-prog"><div class="prog" style="flex:1;max-width:60px;height:3px"><i style="width:' + (t.subtaskProgress || 0) + '%"></i></div><span class="small muted">' + t.subtasksDone + '/' + t.subtaskCount + ' done</span></div>'
+      ? '<div class="m-sub-prog"><div class="prog" style="flex:1;height:6px"><i style="width:' + (t.subtaskProgress || 0) + '%"></i></div><span class="small muted" style="white-space:nowrap">' + t.subtasksDone + '/' + t.subtaskCount + '</span></div>'
       : '';
     var dueHtml = t.due_date
       ? (t.overdue ? '<span class="badge over">' + fmtDate(t.due_date) + '</span>' : '<span class="badge status">' + fmtDate(t.due_date) + '</span>')
       : '';
-    return '<div class="m-task-card' + (sub ? ' sub' : '') + '" style="margin-left:' + indent + 'px" onclick="App.openTask(\'' + h(t.id) + '\')">' +
+    var act = cardStageAction(t);
+    var actionsHtml = '<div class="m-task-actions">' +
+      (act ? '<button class="m-act primary" onclick="event.stopPropagation();App.quickStage(\'' + h(t.id) + '\',\'' + h(act.s) + '\')">' + h(act.l) + '</button>' : '') +
+      '<button class="m-act" onclick="event.stopPropagation();App.openTask(\'' + h(t.id) + '\')">Details</button>' +
+    '</div>';
+    return '<div class="m-task-card' + (sub ? ' sub' : '') + '"' + (indent ? ' style="margin-left:' + indent + 'px"' : '') + ' onclick="App.openTask(\'' + h(t.id) + '\')">' +
       '<div class="m-task-title">' + (sub ? '<span class="m-task-indent">↳</span>' : '') + h(t.title) + '</div>' +
       '<div class="m-task-meta">' +
         (t.project_name ? '<span class="m-task-proj">' + h(t.project_name) + '</span>' : '') +
@@ -473,6 +495,7 @@
         '<span class="m-assignee-name">' + h(t.assignee_name || 'Unassigned') + '</span></span>' +
         '<span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span>' +
       '</div>' +
+      actionsHtml +
     '</div>';
   }
 
@@ -881,7 +904,7 @@
     newSubtask: function (parentId) { taskForm('Add subtask', parentId, null); },
     quickAssignee: function (id, val) { call('reassignTask', id, val).then(function (t) { toast('Assignee updated'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
     quickField: function (id, field, val) { var patch = {}; patch[field] = val; call('updateTaskDefinition', id, patch).then(function (t) { toast('Saved'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
-    quickStage: function (id, val) { if (!val) return; call('setStageQuick', id, val).then(function () { toast('Status updated'); renderMyTasks(); refreshBell(); }).catch(function (e) { errToast(e); renderMyTasks(); }); },
+    quickStage: function (id, val) { if (!val) return; call('setStageQuick', id, val).then(function () { toast('Status updated'); refreshCurrentList(); refreshBell(); }).catch(function (e) { errToast(e); refreshCurrentList(); }); },
     globalNewTask: function () {
       call('listProjects').then(function (ps) {
         var allowed = ps.filter(canCreateTaskInProject);
