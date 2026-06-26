@@ -222,7 +222,7 @@
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
-          '<span class="ver-tag" title="UI build">m6</span>' +
+          '<span class="ver-tag" title="UI build">m7</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
@@ -275,7 +275,10 @@
       var headHtml = '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
           (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') +
         '</div>';
-      var statsHtml = '<div class="stat-grid">' + cards.map(function (c) {
+      // Mobile shows the 4 personal-focus cards (Open tasks, My pending, My overdue,
+      // Avg completion) like the mockup; desktop keeps all 6.
+      var statCards = isMobile() ? [cards[1], cards[2], cards[3], cards[5]] : cards;
+      var statsHtml = '<div class="stat-grid">' + statCards.map(function (c) {
           return '<div class="card stat ' + c[2] + '"><div class="n">' + c[1] + '</div><div class="l">' + c[0] + '</div></div>';
         }).join('') + '</div>';
       var workflowHtml = '<div class="card" style="padding:14px;margin-bottom:18px">' +
