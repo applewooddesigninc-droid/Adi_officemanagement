@@ -295,4 +295,38 @@
     .brand{font-size:15px}
     .stat-grid{grid-template-columns:repeat(2,1fr)}
   }
+
+  /* ══ .mob class fallbacks — mirrors the ≤640px block above.
+        Applied by JS before any rendering happens, so these fire even when
+        the browser ignores @media queries (e.g. desktop-mode in some GAS shells). ══ */
+  html.mob .sidebar{display:none !important}
+  html.mob .layout{min-height:calc(100vh - 52px)}
+  html.mob .bottom-nav{display:flex}
+  html.mob .fab{display:flex}
+  html.mob .main{padding:14px 12px 86px}
+  html.mob .topbar{height:52px;padding:0 14px;gap:10px}
+  html.mob .brand{font-size:17px}
+  html.mob .brand small{display:none}
+  html.mob .userchip .name-role{display:none}
+  html.mob .switch-link{display:none}
+  html.mob .topbar .btn{display:none}
+  html.mob .page-head > .btn{display:inline-flex !important}
+  html.mob .page-head{margin-bottom:14px;flex-wrap:wrap;gap:8px}
+  html.mob .page-head h1{font-size:20px}
+  html.mob .stat-grid{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+  html.mob .stat{padding:12px 14px}
+  html.mob .stat .n{font-size:22px}
+  html.mob .board{grid-template-columns:1fr;gap:10px}
+  html.mob .proj-grid{grid-template-columns:1fr;gap:10px}
+  html.mob .filters{grid-template-columns:1fr;gap:8px;margin-bottom:12px}
+  html.mob input,html.mob select,html.mob textarea{padding:11px 12px;font-size:15px}
+  html.mob .btn{padding:10px 16px;font-size:14px}
+  html.mob .btn.sm{padding:8px 12px;font-size:13px}
+  html.mob label.fld{margin:8px 0}
+  html.mob .overlay{padding:0;align-items:flex-end;background:rgba(40,25,12,.52)}
+  html.mob .modal{border-radius:20px 20px 0 0;max-width:100%;width:100%;max-height:94vh;margin:0}
+  html.mob .modal .head{padding:0 16px 12px;border-bottom:1px solid var(--line)}
+  html.mob .modal .head::before{content:'';display:block;width:36px;height:4px;background:var(--line);border-radius:2px;margin:12px auto 10px}
+  html.mob .modal .body{max-height:calc(94vh - 80px);padding:10px 14px 24px}
+  html.mob .notif-pop{width:calc(100vw - 20px);right:10px;left:10px;top:54px;max-height:80vh}
 </style>

@@ -1,3 +1,19 @@
+<!-- Viewport + mobile class — runs before anything else.
+     GAS HtmlService may ignore the <meta> tag in the HTML file, so we set it
+     programmatically here and add class "mob" to <html> for CSS to hook into. -->
+<script>
+(function () {
+  /* 1. Force correct viewport so the browser doesn't zoom out to desktop width */
+  var m = document.querySelector('meta[name="viewport"]');
+  if (!m) { m = document.createElement('meta'); m.name = 'viewport'; document.head.insertBefore(m, document.head.firstChild); }
+  m.content = 'width=device-width, initial-scale=1';
+
+  /* 2. Mark <html> with .mob so CSS can target mobile independently of @media */
+  function applyClass() { document.documentElement.classList.toggle('mob', window.innerWidth <= 640); }
+  applyClass();
+  window.addEventListener('resize', applyClass, { passive: true });
+})();
+</script>
 <!-- DOMPurify: sanitizes the one place we inject HTML (comment @mention spans).
      Pin this version; upgrade deliberately after reviewing the changelog. -->
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.3/dist/purify.min.js"></script>
@@ -86,7 +102,7 @@
   function switchAccountUrl() { var url = (S.boot && S.boot.webAppUrl) || location.href; return 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(url); }
   function fmtDate(d) { if (!d) return ''; return String(d).slice(0, 10); }
   function fmtWhen(iso) { if (!iso) return ''; return String(iso).replace('T', ' ').slice(0, 16); }
-  function isMobile() { return window.innerWidth <= 640; }
+  function isMobile() { return document.documentElement.classList.contains('mob'); }
   function toast(msg, isErr) {
     var t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : ''); t.textContent = msg;
