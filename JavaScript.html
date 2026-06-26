@@ -1,17 +1,20 @@
-<!-- Viewport + mobile class — runs before anything else.
-     GAS HtmlService may ignore the <meta> tag in the HTML file, so we set it
-     programmatically here and add class "mob" to <html> for CSS to hook into. -->
+<!-- Mobile detection — runs before anything else.
+     Inside the Google Apps Script sandbox iframe, window.innerWidth can report
+     the DESKTOP width even on a phone, so width-based @media queries fail to
+     fire. We therefore detect the real device by user-agent and add class "mob"
+     to <html>; all mobile layout is driven by html.mob rules, not @media. -->
 <script>
 (function () {
-  /* 1. Force correct viewport so the browser doesn't zoom out to desktop width */
-  var m = document.querySelector('meta[name="viewport"]');
-  if (!m) { m = document.createElement('meta'); m.name = 'viewport'; document.head.insertBefore(m, document.head.firstChild); }
-  m.content = 'width=device-width, initial-scale=1';
-
-  /* 2. Mark <html> with .mob so CSS can target mobile independently of @media */
-  function applyClass() { document.documentElement.classList.toggle('mob', window.innerWidth <= 640); }
+  var ua = navigator.userAgent || '';
+  var isPhoneUA = /Mobi|Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|webOS/i.test(ua)
+                  || (/iPad|Macintosh/i.test(ua) && 'ontouchend' in document); // iPadOS reports as Mac
+  function applyClass() {
+    var mob = isPhoneUA || window.innerWidth <= 640;
+    document.documentElement.classList.toggle('mob', mob);
+  }
   applyClass();
   window.addEventListener('resize', applyClass, { passive: true });
+  window.addEventListener('orientationchange', applyClass, { passive: true });
 })();
 </script>
 <!-- DOMPurify: sanitizes the one place we inject HTML (comment @mention spans).
@@ -219,6 +222,7 @@
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
+          '<span class="ver-tag" title="UI build">m4</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
