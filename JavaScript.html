@@ -209,54 +209,89 @@
   }
 
   /* ---------- shell ---------- */
+  var BELL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+  var MNAV_ICON = {
+    dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/></svg>',
+    projects:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    mytasks:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    more:      '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>'
+  };
+
   function renderShell() {
     var u = S.boot.user;
-    var NAV_ICON = {
-      dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
-      projects:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
-      mytasks:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
-      admin:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
-    };
-    var nav = [
+    var deskNav = [
       { v: 'dashboard', ic: '▦', t: 'Dashboard' },
       { v: 'projects', ic: '▣', t: 'Projects' },
       { v: 'mytasks', ic: '✔', t: 'My Tasks' }
     ];
-    if (S.boot.canManageUsers) nav.push({ v: 'admin', ic: '⚙', t: 'Team' });
+    if (S.boot.canManageUsers) deskNav.push({ v: 'admin', ic: '⚙', t: 'Team' });
+    var mnav = [
+      { v: 'dashboard', t: 'Home' }, { v: 'projects', t: 'Projects' },
+      { v: 'mytasks', t: 'My Tasks' }, { v: 'more', t: 'More' }
+    ];
 
     $('#root').innerHTML =
+      /* desktop top bar (hidden on mobile via CSS) */
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
-          '<span class="ver-tag" title="UI build">m8</span>' +
+          '<span class="ver-tag" title="UI build">m9</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
-        '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count hidden" id="bellCount">0</span></button>' +
+        '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count bellCount hidden">0</span></button>' +
         '<div class="userchip" title="' + h(u.email) + '"><span class="avatar">' + h(initials(u.name)) + '</span>' +
           '<span class="name-role">' + h(u.name) + ' · <b>' + h(u.label) + '</b></span></div>' +
           '<a class="switch-link" href="' + switchAccountUrl() + '" target="_blank" title="Sign in as a different Google account">Switch</a>' +
       '</div>' +
+      /* mobile app bar (hidden on desktop via CSS); content set by mAppbar() */
+      '<div class="m-appbar" id="mAppbar"></div>' +
       '<div class="layout">' +
         '<div class="sidebar"><div class="nav" id="nav">' +
-          nav.map(function (n) {
+          deskNav.map(function (n) {
             return '<a href="#" data-view="' + n.v + '" onclick="App.nav(\'' + n.v + '\');return false;">' +
               '<span class="ic">' + n.ic + '</span>' + n.t + '</a>';
           }).join('') +
         '</div></div>' +
         '<div class="main" id="main"></div>' +
       '</div>' +
-      '<div id="notifPop"></div><div id="modalHost"></div><div id="confirmHost"></div>' +
+      '<div id="notifPop"></div><div id="modalHost"></div><div id="confirmHost"></div><div id="sheetHost"></div>' +
       '<nav class="bottom-nav" id="bottomNav">' +
-        nav.map(function (n) {
-          return '<a href="#" data-view="' + n.v + '" onclick="App.nav(\'' + n.v + '\');return false;">' +
-            '<span class="ic">' + (NAV_ICON[n.v] || n.ic) + '</span><span class="lbl">' + n.t + '</span></a>';
+        mnav.map(function (n) {
+          var act = n.v === 'more' ? 'App.openMore()' : 'App.nav(\'' + n.v + '\')';
+          return '<a href="#" data-view="' + n.v + '" onclick="' + act + ';return false;">' +
+            '<span class="ic">' + (MNAV_ICON[n.v] || '') + '</span><span class="lbl">' + n.t + '</span></a>';
         }).join('') +
       '</nav>' +
       (S.boot.canCreateProject ? '<button class="fab" onclick="App.globalNewTask()" title="New task">+</button>' : '');
   }
 
+  /* Update the mobile app bar for the current screen.
+     opts: { title, back (JS expr string), plain (no actions), navKey (bottom-nav highlight) } */
+  function mAppbar(opts) {
+    opts = opts || {};
+    var el = document.getElementById('mAppbar');
+    if (el) {
+      var back = opts.back ? '<button class="m-back" aria-label="Back" onclick="' + opts.back + '">‹</button>' : '';
+      var actions = opts.plain ? '' :
+        '<div class="m-actions">' +
+          '<button class="m-bell" aria-label="Notifications" onclick="App.openNotifs()">' + BELL_SVG +
+            '<span class="count bellCount hidden">0</span></button>' +
+          '<button class="m-avatar" aria-label="Menu" onclick="App.openMore()">' + h(initials(S.boot.user.name)) + '</button>' +
+        '</div>';
+      el.className = 'm-appbar' + (back ? ' center' : '');
+      el.innerHTML = back + '<div class="m-title">' + h(opts.title || '') + '</div>' + actions;
+    }
+    // bottom-nav highlight follows the mapped key (More-subpages highlight "More")
+    var key = opts.navKey || S.view;
+    [].forEach.call(document.querySelectorAll('#bottomNav a, #nav a'), function (a) {
+      a.classList.toggle('active', a.getAttribute('data-view') === key);
+    });
+    refreshBell();
+  }
+
   function navigate(view) {
     S.view = view;
+    document.documentElement.classList.remove('detail-open');
     [].forEach.call(document.querySelectorAll('#nav a, #bottomNav a'), function (a) {
       a.classList.toggle('active', a.getAttribute('data-view') === view);
     });
@@ -264,6 +299,23 @@
     else if (view === 'projects') renderProjects();
     else if (view === 'mytasks') renderMyTasks();
     else if (view === 'admin') renderAdmin();
+  }
+
+  /* ---------- bottom-sheet infrastructure ---------- */
+  function openSheet(innerHtml) {
+    var host = $('#sheetHost');
+    host.innerHTML = '<div class="m-sheet-ov" onclick="App.sheetBg(event)">' +
+      '<div class="m-sheet"><div class="grab"></div>' + innerHtml + '</div></div>';
+    // next frame → add .show for the slide-up transition
+    requestAnimationFrame(function () {
+      var ov = host.firstChild; if (ov) ov.classList.add('show');
+    });
+  }
+  function closeSheet() {
+    var host = $('#sheetHost'); if (!host) return;
+    var ov = host.firstChild;
+    if (ov) { ov.classList.remove('show'); setTimeout(function () { host.innerHTML = ''; }, 200); }
+    else host.innerHTML = '';
   }
 
   /* ---------- dashboard ---------- */

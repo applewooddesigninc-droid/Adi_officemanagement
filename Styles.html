@@ -176,202 +176,273 @@
     .stat-grid{grid-template-columns:repeat(3,1fr)}
   }
 
-  /* ══ Bottom navigation bar ══ */
-  .bottom-nav{
-    display:none;position:fixed;bottom:0;left:0;right:0;
-    background:var(--surface);border-top:1px solid var(--line);
-    z-index:35;box-shadow:0 -2px 16px rgba(60,40,20,.09);
-    padding-bottom:env(safe-area-inset-bottom,0)
-  }
-  .bottom-nav a{
-    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    padding:9px 4px 7px;color:var(--muted);text-decoration:none;
-    font-size:10px;font-weight:600;gap:3px;letter-spacing:.2px;
-    -webkit-tap-highlight-color:transparent;transition:color .12s
-  }
-  .bottom-nav a .ic{font-size:22px;line-height:1;transition:transform .12s}
-  .bottom-nav a.active{color:var(--brown)}
-  .bottom-nav a.active .ic{transform:scale(1.1)}
-
-  /* ══ Floating action button ══ */
-  .fab{
-    display:none;position:fixed;bottom:78px;right:18px;
-    width:54px;height:54px;border-radius:50%;
-    background:linear-gradient(135deg,var(--gold) 0%,var(--gold-dark) 100%);
-    color:#3a2a10;border:none;font-size:28px;font-weight:300;
-    box-shadow:0 4px 20px rgba(120,80,20,.4);
-    z-index:36;cursor:pointer;line-height:1;
-    align-items:center;justify-content:center;
-    -webkit-tap-highlight-color:transparent;transition:transform .12s,box-shadow .12s
-  }
-  .fab:active{transform:scale(.93);box-shadow:0 2px 8px rgba(120,80,20,.22)}
-
-  /* ══ Mobile task cards (touch-first) ══ */
-  .m-task-list{display:flex;flex-direction:column;gap:12px}
-  .m-task-card{
-    background:var(--surface);border:1px solid var(--line);border-radius:14px;
-    padding:16px;box-shadow:var(--shadow);cursor:pointer;
-    -webkit-tap-highlight-color:transparent;transition:background .12s
-  }
-  .m-task-card:active{background:#fdf7ef}
-  .m-task-card.sub{border-left:4px solid var(--gold);border-radius:5px 14px 14px 5px}
-  .m-task-title{font-weight:700;font-size:16px;margin-bottom:10px;line-height:1.4;color:var(--text)}
-  .m-task-indent{color:var(--muted);margin-right:5px}
-  .m-task-meta{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;align-items:center}
-  .m-task-proj{font-size:12.5px;color:var(--muted);background:var(--line-soft);
-    padding:3px 10px;border-radius:999px;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}
-  .m-task-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
-  .m-assignee{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;min-width:0}
-  .m-avatar{width:28px;height:28px;border-radius:50%;background:var(--gold);color:#3a2a10;
-    font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
-  .m-assignee-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
-  .m-sub-prog{display:flex;align-items:center;gap:7px;margin-top:7px}
-
-  /* ══ Mobile team-member cards (roster table → cards) ══ */
-  .m-user-list{display:flex;flex-direction:column;gap:12px}
-  .m-user-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
-    padding:16px;box-shadow:var(--shadow)}
-  .m-user-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .m-user-name{font-weight:700;font-size:16px}
-  .m-user-email{font-size:13.5px;color:var(--muted);margin:2px 0 8px;word-break:break-all}
-
-  /* ══ Task-card action buttons (bottom of each task card) ══ */
-  .m-task-actions{display:flex;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
-  .m-act{flex:1;min-height:46px;border-radius:11px;font-size:15px;font-weight:700;
-    border:1px solid var(--line);background:#fff;color:var(--brown);
-    display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
-  .m-act.primary{background:var(--gold);border-color:var(--gold);color:#3a2a10}
-  .m-act:active{opacity:.85}
-
   /* ════════════════════════════════════════════════════════════════════
-     MOBILE REDESIGN — touch-first. Driven by html.mob (set by JS on phones
-     and narrow viewports), so it applies reliably inside the GAS iframe where
-     width-based media queries are unreliable. The desktop CSS above is left
-     completely untouched. Material-inspired: 16px base text, ~48px touch
-     targets, 16px gutters, generous spacing.
+     ADI MOBILE UI  —  implementation of the approved "ADI Mobile UI Design"
+     package. Activates under the html.mob class (set by JS for phones / <768px).
+     Desktop CSS above is untouched. Palette + sizing per the design brief.
      ════════════════════════════════════════════════════════════════════ */
-  html.mob body{font-size:16px;line-height:1.5}
+  :root{ --m-pri:#77361A; --m-pri-d:#5C2912; --m-gold:#C1A051; --m-gold-d:#A8893E; }
 
-  /* ---- Shell: top bar ---- */
-  html.mob .topbar{height:56px;padding:0 16px;gap:12px}
-  html.mob .brand{font-size:18px}
-  html.mob .brand small{display:none}
-  html.mob .ver-tag{font-size:11px;padding:2px 7px}
-  html.mob .userchip{padding:0;background:none}
-  html.mob .userchip .name-role{display:none}
-  html.mob .switch-link{display:none}
-  html.mob .bell{width:42px;height:42px;font-size:20px}
-  html.mob .topbar .btn{display:none}                /* the FAB replaces "+ New task" */
+  /* Hide the whole mobile chrome on desktop; JS toggles via html.mob */
+  .m-appbar,.bottom-nav,.fab{display:none}
 
-  /* ---- Shell: body, bottom nav, FAB ---- */
+  /* ---- App bar (brown gradient header) ---- */
+  .m-appbar{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,var(--m-pri),var(--m-pri-d));
+    color:#fff;padding:0 14px;min-height:64px;align-items:center;gap:10px}
+  .m-appbar .m-back{width:40px;height:40px;border:none;background:none;color:#fff;font-size:26px;
+    display:flex;align-items:center;justify-content:center;margin-left:-8px;-webkit-tap-highlight-color:transparent;flex-shrink:0}
+  .m-appbar .m-title{font-size:21px;font-weight:800;letter-spacing:.2px;flex:1;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-appbar.center .m-title{text-align:center;font-size:19px}
+  .m-appbar .m-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .m-appbar .m-bell{position:relative;width:44px;height:44px;border:none;background:none;color:#fff;
+    display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+  .m-appbar .m-bell svg{width:24px;height:24px}
+  .m-appbar .m-bell .count{position:absolute;top:4px;right:4px;min-width:18px;height:18px;padding:0 4px;
+    background:var(--m-gold);color:#3a2a10;border-radius:999px;font-size:11px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;line-height:1}
+  .m-appbar .m-avatar{width:40px;height:40px;border-radius:50%;background:var(--m-gold);color:#3a2a10;
+    font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;border:none;-webkit-tap-highlight-color:transparent}
+  .m-appbar.ver::after{content:attr(data-ver);position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    background:var(--m-gold);color:#3a2a10;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px}
+
+  /* ---- Bottom navigation (Home · Projects · My Tasks · More) ---- */
+  .bottom-nav{position:fixed;bottom:0;left:0;right:0;height:64px;background:var(--surface);
+    border-top:1px solid var(--line);z-index:35;box-shadow:0 -2px 16px rgba(60,40,20,.09);
+    padding-bottom:env(safe-area-inset-bottom,0)}
+  .bottom-nav a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;-webkit-tap-highlight-color:transparent}
+  .bottom-nav a .ic{display:flex;align-items:center;justify-content:center}
+  .bottom-nav a .ic svg{width:25px;height:25px}
+  .bottom-nav a.active{color:var(--m-pri)}
+  .bottom-nav a.active .ic{position:relative}
+  .bottom-nav a.active .ic::before{content:'';position:absolute;inset:-7px -12px;background:#f3e7cf;border-radius:999px;z-index:-1}
+
+  /* ---- Floating action button (gold, New task) ---- */
+  .fab{position:fixed;bottom:80px;right:18px;width:56px;height:56px;border-radius:50%;
+    background:var(--m-gold);color:#3a2a10;border:none;font-size:30px;line-height:1;
+    box-shadow:0 6px 18px rgba(120,80,20,.42);z-index:34;cursor:pointer;
+    align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:transform .12s}
+  .fab:active{transform:scale(.92)}
+
+  /* ════════ html.mob: layout + components ════════ */
+  html.mob body{font-size:14px}
+  html.mob .topbar{display:none}      /* desktop top bar replaced by .m-appbar */
   html.mob .sidebar{display:none !important}
-  html.mob .layout{display:block;min-height:calc(100vh - 56px)}
-  html.mob .main{padding:16px 16px 96px}             /* bottom pad clears the nav + FAB */
-  html.mob .bottom-nav{display:flex;height:62px}
-  html.mob .bottom-nav a{font-size:12px;gap:4px;padding:7px 4px;font-weight:600}
-  html.mob .bottom-nav a .ic{font-size:24px;display:flex;align-items:center;justify-content:center}
-  html.mob .bottom-nav a .ic svg{width:25px;height:25px}
-  html.mob .fab{display:flex;width:50px;height:50px;font-size:27px;bottom:72px;right:14px}
+  html.mob .layout{display:block;min-height:0}
+  html.mob .main{padding:16px 16px 92px;max-width:100%}
+  html.mob .m-appbar{display:flex}
+  html.mob .bottom-nav{display:flex}
+  html.mob .fab{display:flex}
+  html.mob .page-head{display:none}   /* title now lives in the app bar */
 
-  /* ---- Typography ---- */
-  html.mob h1{font-size:22px}
-  html.mob h2{font-size:20px}
-  html.mob .small{font-size:13px}
-  html.mob .page-head{margin-bottom:16px;gap:10px;flex-wrap:wrap}
-  html.mob .page-head h1{font-size:22px}
-  html.mob .page-head > .btn{display:inline-flex !important}
+  /* Pills — reuse .badge colours; make them comfortable on mobile */
+  html.mob .badge{font-size:12px;padding:4px 11px;border-radius:999px;font-weight:700}
 
-  /* ---- Buttons: ≥48px targets, more space between ---- */
-  html.mob .row{gap:12px}
-  html.mob .btn{min-height:48px;padding:12px 18px;font-size:16px;border-radius:11px;
-    display:inline-flex;align-items:center;justify-content:center}
-  html.mob .btn.sm{min-height:40px;padding:9px 14px;font-size:14px}
+  /* Generic mobile card */
+  .m-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:16px;box-shadow:var(--shadow);-webkit-tap-highlight-color:transparent}
+  .m-card.tap{cursor:pointer}
+  .m-card.tap:active{background:#fdf7ef}
+  .m-section-h{display:flex;align-items:center;justify-content:between;margin:18px 2px 10px}
+  .m-section-h .t{font-size:15px;font-weight:800;color:var(--text);flex:1}
+  .m-section-h .a{font-size:14px;font-weight:700;color:var(--m-pri)}
+  .m-list{display:flex;flex-direction:column;gap:12px}
+  .m-muted{color:var(--muted)}
+  .m-empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:14px}
 
-  /* ---- Forms: 16px (prevents iOS focus-zoom), 48px tall, full width ---- */
-  html.mob input,html.mob select,html.mob textarea{font-size:16px;min-height:48px;
-    padding:12px 14px;border-radius:11px;scroll-margin-bottom:140px}
-  html.mob textarea{min-height:104px}
-  html.mob label.fld{margin:14px 0}
-  html.mob label.fld>span{font-size:13px;margin-bottom:6px}
-  html.mob .filters{grid-template-columns:1fr;gap:10px;margin-bottom:14px}
+  /* ---- Stat tiles (2-col grid of 6 KPIs) ---- */
+  .m-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px}
+  .m-stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+    box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .m-stat:active{background:#fdf7ef}
+  .m-stat .n{font-size:24px;font-weight:800;color:var(--m-pri);line-height:1.1}
+  .m-stat.alert .n{color:var(--danger)}
+  .m-stat .l{font-size:13px;color:var(--muted);margin-top:3px}
 
-  /* ---- Stat cards: square-ish 2×2 tiles with large numbers ---- */
-  html.mob .stat-grid{grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-  html.mob .stat{aspect-ratio:1.3/1;display:flex;flex-direction:column;justify-content:center;padding:16px 18px;border-radius:16px}
-  html.mob .stat .n{font-size:30px;font-weight:800;line-height:1}
-  html.mob .stat .l{font-size:13px;margin-top:6px;text-transform:none;letter-spacing:.2px}
+  /* ---- Workflow distribution ---- */
+  .m-workflow .bar{display:flex;height:14px;border-radius:999px;overflow:hidden;margin:4px 0 10px}
+  .m-workflow .bar i{display:block;height:100%}
+  .m-workflow .legend{font-size:13px;color:var(--muted)}
 
-  /* ---- Stacked cards / widgets / board / projects ---- */
-  html.mob .card{border-radius:14px}
-  html.mob .widget-grid{grid-template-columns:1fr !important;gap:12px}
-  html.mob .widget{padding:16px}
-  html.mob .widget-title{font-size:12px}
-  html.mob .widget-list li{padding:9px 0;font-size:14px}
-  html.mob .wm{font-size:12.5px}
-  html.mob .w-empty,html.mob .emp-row{font-size:13.5px}
-  html.mob .board{grid-template-columns:1fr;gap:12px}
-  html.mob .proj-grid{grid-template-columns:1fr;gap:12px}
-  html.mob .proj{padding:16px}
-  html.mob .proj h3{font-size:17px}
+  /* ---- Mini-tab chips (Needs attention, etc.) ---- */
+  .m-chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+  .m-chip{padding:8px 14px;border-radius:999px;background:var(--line-soft);color:var(--text);
+    font-size:13px;font-weight:700;border:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
+  .m-chip.active{background:var(--m-pri);color:#fff}
 
-  /* ---- Collapsible dashboard sections (Filter tasks / Insights) ---- */
-  html.mob details.m-collapse{margin-bottom:12px}
-  html.mob details.m-collapse>summary{padding:14px 16px;font-size:15px;font-weight:700;
-    color:var(--brown-dark);background:var(--surface);border:1px solid var(--line);border-radius:13px;
-    cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;
+  /* ---- Task card (the repeating list unit) ---- */
+  .m-task{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 16px;
+    box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent;position:relative}
+  .m-task:active{background:#fdf7ef}
+  .m-task.sub{border-left:4px solid var(--m-gold)}
+  .m-task .t{font-size:16px;font-weight:800;color:var(--text);line-height:1.35;padding-right:28px}
+  .m-task .meta{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
+  .m-task .proj{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-task .who{font-size:13px;color:var(--muted);white-space:nowrap;flex-shrink:0;max-width:42%;overflow:hidden;text-overflow:ellipsis}
+  .m-task .pills{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:11px}
+  .m-task .due{font-size:13px;font-weight:700;color:var(--muted)}
+  .m-task .due.over{color:var(--danger)}
+  .m-task .more{position:absolute;top:10px;right:8px;width:30px;height:34px;border:none;background:none;
+    color:var(--muted);font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;
     -webkit-tap-highlight-color:transparent}
-  html.mob details.m-collapse>summary::-webkit-details-marker{display:none}
-  html.mob details.m-collapse>summary::after{content:'▾';font-size:14px;color:var(--muted)}
-  html.mob details.m-collapse[open]>summary{margin-bottom:12px}
-  html.mob details.m-collapse[open]>summary::after{content:'▴'}
+  .m-task .spacer{flex:1}
+  /* status control (My Tasks) */
+  .m-statusctl{border:1.5px solid var(--m-gold);background:#fff;color:var(--m-pri-d);font-weight:800;
+    font-size:14px;border-radius:999px;padding:9px 16px;min-height:40px;-webkit-tap-highlight-color:transparent;flex-shrink:0}
 
-  /* ---- Badges a touch larger for legibility ---- */
-  html.mob .badge{font-size:12.5px;padding:3px 10px}
+  /* ---- Segmented control (My Tasks buckets) ---- */
+  .m-seg{display:flex;background:#efe7d9;border-radius:12px;padding:4px;margin-bottom:14px}
+  .m-seg button{flex:1;border:none;background:none;padding:10px 6px;border-radius:9px;font-size:14px;
+    font-weight:700;color:var(--muted);-webkit-tap-highlight-color:transparent}
+  .m-seg button.active{background:#fff;color:var(--m-pri);box-shadow:var(--shadow)}
 
-  /* ---- History timeline ---- */
-  html.mob .hist-text,html.mob .hist-who{font-size:13px}
-  html.mob .hist-when{font-size:12px}
+  /* ---- Stage tabs (project board) ---- */
+  .m-stagetabs{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;margin-bottom:14px}
+  .m-stagetab{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;
+    border:1px solid var(--line);background:#fff;font-size:14px;font-weight:700;color:var(--text);-webkit-tap-highlight-color:transparent}
+  .m-stagetab.active{background:var(--m-pri);color:#fff;border-color:var(--m-pri)}
+  .m-stagetab .ct{font-size:12px;font-weight:800;background:rgba(0,0,0,.08);border-radius:999px;padding:1px 8px}
+  .m-stagetab.active .ct{background:var(--m-gold);color:#3a2a10}
 
-  /* ---- Modal: full-height bottom sheet with grab handle ---- */
-  html.mob .overlay{padding:0;align-items:flex-end;background:rgba(40,25,12,.55)}
-  html.mob .modal{border-radius:22px 22px 0 0;max-width:100%;width:100%;max-height:94vh;margin:0}
-  html.mob .modal .head{padding:0 18px 14px;position:relative}
-  html.mob .modal .head::before{content:'';display:block;width:40px;height:4px;
-    background:var(--line);border-radius:2px;margin:12px auto 12px}
-  html.mob .modal .head h2{font-size:19px;line-height:1.3}
-  html.mob .modal .x{width:44px;height:44px;font-size:26px;display:flex;
-    align-items:center;justify-content:center;flex-shrink:0}
-  html.mob .modal .body{max-height:calc(94vh - 84px);padding:8px 16px 28px}
-  html.mob .section{margin-top:20px;padding-top:16px}
-  /* Primary stage actions (the first action row in the sheet) → full-width buttons */
-  html.mob .modal .body > .row.wrap:first-child .btn{flex:1 1 100%;min-height:50px}
+  /* ---- Project card ---- */
+  .m-proj .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .m-proj h3{font-size:18px;font-weight:800;flex:1}
+  .m-proj .sub{font-size:13px;color:var(--muted);margin-top:3px}
+  .m-proj .bar{height:10px;background:var(--line-soft);border-radius:999px;overflow:hidden;margin:12px 0 6px}
+  .m-proj .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--m-gold),var(--m-pri))}
+  .m-proj .pct{font-size:14px;color:var(--muted)}
+  .m-proj .acts{display:flex;gap:10px;margin-top:14px}
+  .m-proj .acts .btn{flex:1}
 
-  /* ---- Checklist & comments: bigger checkboxes + text ---- */
-  html.mob .chk{padding:10px 0;gap:12px}
-  html.mob .chk input[type=checkbox]{width:24px;height:24px;flex-shrink:0}
-  html.mob .chk .grow{font-size:15px}
-  html.mob .cmt{padding:12px 0}
-  html.mob .cmt .who{font-size:14px}
-  html.mob .cmt .when{font-size:12px}
-  html.mob .cmt .bd{font-size:15px;margin-top:5px}
+  /* ---- Full-screen task detail ---- */
+  html.mob.detail-open .bottom-nav,html.mob.detail-open .fab{display:none}
+  .m-detail{padding-bottom:84px}
+  .m-detail .dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .m-detail .dproj{margin-left:auto;font-size:13px;color:var(--muted)}
+  .m-detail h1{font-size:24px;font-weight:800;line-height:1.25;margin:8px 0 0}
+  .m-detail .primary{width:100%;min-height:54px;border:none;border-radius:13px;background:var(--m-gold);
+    color:#3a2a10;font-size:17px;font-weight:800;margin:16px 0 4px;-webkit-tap-highlight-color:transparent}
+  .m-detail .danger-act{width:100%;min-height:50px;border:1px solid #e7b7b3;border-radius:13px;background:#fff;
+    color:var(--danger);font-size:15px;font-weight:700;margin-top:10px}
+  .m-kv{display:flex;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft)}
+  .m-kv:last-child{border-bottom:none}
+  .m-kv .k{color:var(--muted);font-size:14px}
+  .m-kv .v{font-weight:700;font-size:14px;text-align:right}
+  .m-cardh{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .m-cardh .t{font-size:16px;font-weight:800}
+  .m-cardh .c{font-size:13px;color:var(--muted)}
+  .m-accordion{display:flex;align-items:center;justify-content:space-between;width:100%;
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 16px;
+    font-size:16px;font-weight:800;box-shadow:var(--shadow);-webkit-tap-highlight-color:transparent}
+  .m-accordion .chev{color:var(--muted);font-size:20px}
 
-  /* ---- Notifications: full-width sheet, large rows ---- */
-  html.mob .notif-pop{position:fixed;width:auto;right:8px;left:8px;top:60px;max-height:78vh;border-radius:14px}
-  html.mob .notif{padding:14px 16px}
-  html.mob .notif .nt{font-size:15px}
-  html.mob .notif .nb{font-size:13.5px}
+  /* docked comment composer */
+  .m-composer{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:10px;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom,0));background:var(--surface);border-top:1px solid var(--line);z-index:33}
+  .m-composer input{flex:1;min-height:46px;border-radius:999px;border:1px solid var(--line);
+    padding:11px 16px;font-size:15px;background:var(--bg)}
+  .m-composer .send{width:46px;height:46px;border-radius:50%;border:none;background:var(--m-pri);color:#fff;
+    font-size:22px;flex-shrink:0;-webkit-tap-highlight-color:transparent}
 
-  /* ---- Toast sits above the bottom nav ---- */
-  html.mob .toast{bottom:80px;font-size:14.5px;padding:12px 20px}
+  /* ---- Bottom sheet (filters, quick actions, pickers, more) ---- */
+  .m-sheet-ov{position:fixed;inset:0;background:rgba(40,25,12,.5);z-index:60;display:flex;align-items:flex-end;
+    opacity:0;transition:opacity .18s}
+  .m-sheet-ov.show{opacity:1}
+  .m-sheet{background:var(--surface);width:100%;max-height:88vh;overflow:auto;border-radius:22px 22px 0 0;
+    padding:8px 18px calc(20px + env(safe-area-inset-bottom,0));transform:translateY(100%);transition:transform .22s cubic-bezier(.2,.7,.3,1)}
+  .m-sheet-ov.show .m-sheet{transform:translateY(0)}
+  .m-sheet .grab{width:40px;height:4px;background:var(--line);border-radius:2px;margin:6px auto 12px}
+  .m-sheet-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .m-sheet-h .t{font-size:20px;font-weight:800}
+  .m-sheet-h .a{font-size:15px;font-weight:700;color:var(--m-pri);border:none;background:none}
+  .m-sheet .lbl{font-size:12px;font-weight:800;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;margin:16px 0 6px}
+  .m-sticky-btn{position:sticky;bottom:0;background:var(--surface);padding-top:12px;margin-top:8px}
+  /* picker / value rows inside sheets */
+  .m-pickrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px;-webkit-tap-highlight-color:transparent;text-align:left}
+  .m-pickrow .col{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .m-pickrow .k{font-size:13px;color:var(--muted)}
+  .m-pickrow .v{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-pickrow .chev{color:var(--muted);font-size:20px;flex-shrink:0}
+  .m-optlist{display:flex;flex-direction:column;gap:2px}
+  .m-opt{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;
+    padding:15px 4px;font-size:16px;text-align:left;border-bottom:1px solid var(--line-soft);-webkit-tap-highlight-color:transparent}
+  .m-opt .tick{color:var(--m-pri);font-weight:800}
+  .m-statusopts{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 4px}
+  .m-statusopt{padding:11px 16px;border-radius:999px;font-size:15px;font-weight:800;border:none;-webkit-tap-highlight-color:transparent}
 
-  /* ---- Any table that must remain (e.g. message log): contained scroll, never page-wide ---- */
-  html.mob .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  html.mob .tbl-scroll table.tbl{min-width:560px}
+  /* ---- Form (New task etc.) ---- */
+  .m-form .lbl{font-size:12px;font-weight:800;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;margin:18px 0 6px}
+  .m-form .row2{display:flex;gap:12px}
+  .m-form .row2>div{flex:1;min-width:0}
+  .m-form input,.m-form textarea{width:100%;min-height:50px;border:1px solid var(--line);border-radius:12px;
+    padding:13px 14px;font-size:16px;background:#fff}
+  .m-form textarea{min-height:96px}
+  .m-form .picker{width:100%;display:flex;align-items:center;justify-content:space-between;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:16px;text-align:left;-webkit-tap-highlight-color:transparent}
+  .m-form .picker .chev{color:var(--muted);font-size:20px}
+  .m-form .submit{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0));
+    min-height:54px;border:none;border-radius:13px;background:var(--m-gold);color:#3a2a10;font-size:17px;font-weight:800;z-index:33}
+
+  /* ---- Team member card ---- */
+  .m-member{display:flex;align-items:flex-start;gap:12px}
+  .m-member .av{width:46px;height:46px;border-radius:50%;background:var(--m-pri);color:#fff;font-weight:800;font-size:16px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .m-member .mid{flex:1;min-width:0}
+  .m-member .nm{font-size:17px;font-weight:800}
+  .m-member .em{font-size:13px;color:var(--muted);word-break:break-all;margin:1px 0 8px}
+  .m-member .rowb{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .m-member .ph{font-size:13px;color:var(--muted)}
+  .m-addmember{width:100%;min-height:54px;border:none;border-radius:14px;background:var(--m-pri);color:#fff;
+    font-size:16px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px;-webkit-tap-highlight-color:transparent}
+
+  /* ---- Settings (toggles) ---- */
+  .m-setting{display:flex;align-items:center;gap:12px}
+  .m-setting .mid{flex:1}
+  .m-setting .nm{font-size:17px;font-weight:800}
+  .m-setting .ds{font-size:13px;color:var(--muted);margin-top:2px}
+  .m-toggle{width:52px;height:30px;border-radius:999px;background:#cfc6b8;border:none;position:relative;flex-shrink:0;transition:background .15s;-webkit-tap-highlight-color:transparent}
+  .m-toggle::after{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
+  .m-toggle.on{background:#3f8f4f}
+  .m-toggle.on::after{left:25px}
+
+  /* ---- Notifications feed ---- */
+  .m-notif{display:flex;gap:12px;align-items:flex-start;position:relative}
+  .m-notif.unread{border-left:4px solid var(--m-gold)}
+  .m-notif .ic{width:40px;height:40px;border-radius:50%;background:#f3e7cf;color:var(--m-pri);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .m-notif .ic svg{width:20px;height:20px}
+  .m-notif .mid{flex:1;min-width:0}
+  .m-notif .nt{font-size:15px;font-weight:800;line-height:1.3}
+  .m-notif .nb{font-size:13px;color:var(--muted);margin:2px 0 6px}
+  .m-notif .tm{font-size:12px;color:var(--muted);white-space:nowrap;flex-shrink:0}
+
+  /* ---- Sign in ---- */
+  .m-signin{max-width:460px;margin:0 auto;padding:8vh 22px 40px;text-align:center}
+  .m-signin .logo{font-size:34px;font-weight:800;color:var(--m-pri)}
+  .m-signin .logo .dot{color:var(--m-gold)}
+  .m-signin .sub{color:var(--muted);margin-top:4px}
+  .m-signin h2{font-size:26px;margin:28px 0 4px}
+  .m-signin .acct{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:14px;box-shadow:var(--shadow);margin-bottom:12px;text-align:left;width:100%;-webkit-tap-highlight-color:transparent}
+  .m-signin .acct .av{width:44px;height:44px;border-radius:50%;background:var(--m-pri);color:#fff;font-weight:800;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .m-signin .acct .mid{flex:1;min-width:0}
+  .m-signin .acct .nm{font-weight:800;font-size:16px}
+  .m-signin .acct .em{font-size:13px;color:var(--muted);word-break:break-all}
+  .m-signin .or{display:flex;align-items:center;gap:12px;color:var(--muted);margin:18px 0}
+  .m-signin .or::before,.m-signin .or::after{content:'';flex:1;height:1px;background:var(--line)}
+  .m-signin input{width:100%;min-height:52px;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:16px;background:#fff}
+  .m-signin .cont{width:100%;min-height:54px;border:none;border-radius:13px;background:var(--m-gold);color:#3a2a10;
+    font-size:17px;font-weight:800;margin-top:14px}
+
+  /* toast above the nav */
+  html.mob .toast{bottom:84px;font-size:14.5px;padding:12px 20px}
 
   /* ---- Very small phones ---- */
-  @media(max-width:380px){
-    html.mob .stat-grid{grid-template-columns:1fr 1fr}
-    html.mob .brand{font-size:16px}
-    html.mob .main{padding:14px 12px 96px}
+  @media(max-width:360px){
+    html.mob .main{padding:14px 12px 92px}
+    .m-stat .n{font-size:22px}
   }
 </style>
