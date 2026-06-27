@@ -317,12 +317,77 @@
     if (ov) { ov.classList.remove('show'); setTimeout(function () { host.innerHTML = ''; }, 200); }
     else host.innerHTML = '';
   }
+  var STAGE_BG = { 'To Do': '#eef0f2', 'In Progress': '#e7f0fa', 'Review': '#f7efd6', 'Completed': '#e6f3e9' };
+  var STAGE_FG = { 'To Do': '#5a6068', 'In Progress': '#235c97', 'Review': '#876a14', 'Completed': '#2f7a40' };
+  function stageBg(s) { return STAGE_BG[s] || '#eee'; }
+  function stageFg(s) { return STAGE_FG[s] || '#333'; }
+  /* Generic option-list bottom sheet; invokes onPick(value) with the chosen option. */
+  function mOptions(title, opts, cur, onPick) {
+    window._mPickVals = opts.map(function (o) { return o.v; });
+    window._mPick = onPick;
+    openSheet('<div class="m-sheet-h"><span class="t">' + h(title) + '</span></div><div class="m-optlist">' +
+      opts.map(function (o, i) { return '<button class="m-opt" onclick="App.mPicked(' + i + ')">' + h(o.t) + (cur === o.v ? '<span class="tick">✓</span>' : '') + '</button>'; }).join('') +
+      '</div>');
+  }
+
+  /* ---------- mobile: Notifications feed (design 12) ---------- */
+  function renderNotifsScreen() {
+    S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view;
+    mAppbar({ title: 'Notifications', back: 'App.navBackHome()' });
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('listMyNotifications', 40).then(function (list) {
+      var header = '<div class="m-section-h"><span class="t">Recent</span>' +
+        (list.length ? '<button style="border:none;background:none;color:var(--m-pri);font-weight:700;font-size:14px" onclick="App.markAllM()">Mark all read</button>' : '') + '</div>';
+      main.innerHTML = header + (list.length
+        ? '<div class="m-list">' + list.map(notifCard).join('') + '</div>'
+        : '<div class="m-empty">No notifications.</div>');
+    }).catch(errToast);
+  }
+  function notifCard(n) {
+    return '<div class="m-card m-notif' + (n.read ? '' : ' unread') + '" onclick="App.openFromNotifM(\'' + h(n.id) + '\',\'' + h(n.task_id || '') + '\')">' +
+      '<div class="ic">' + BELL_SVG + '</div>' +
+      '<div class="mid"><div class="nt">' + h(n.title) + '</div><div class="nb">' + h(n.body) + '</div></div>' +
+      '<div class="tm">' + h(fmtWhen(n.created_at).slice(5, 16)) + '</div></div>';
+  }
+
+  /* ---------- mobile: Notification settings (design 11) ---------- */
+  function renderSettings() {
+    S.view = 'settings';
+    mAppbar({ title: 'Notifications', back: 'App.navBackHome()', navKey: 'more' });
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    Promise.all([call('getEmailConfig'), call('getWhatsAppConfig')]).then(function (r) {
+      var emc = r[0], wac = r[1];
+      function lbl(t) { return '<div style="font-size:12px;font-weight:800;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;margin:18px 2px 8px">' + t + '</div>'; }
+      function tog(id, title, desc, on) {
+        return '<div class="m-card" style="margin-bottom:12px"><div class="m-setting"><div class="mid"><div class="nm">' + title + '</div><div class="ds">' + desc + '</div></div>' +
+          '<button class="m-toggle' + (on ? ' on' : '') + '" id="' + id + '" aria-label="' + title + '" onclick="App.toggleSetting(\'' + id + '\')"></button></div></div>';
+      }
+      function val(k, v) { return '<div class="m-card" style="margin-bottom:10px;padding:13px 16px"><div style="font-size:13px;color:var(--muted)">' + k + '</div><div style="font-size:16px;font-weight:700">' + h(v) + '</div></div>'; }
+      main.innerHTML =
+        lbl('Delivery') +
+        tog('setEmail', 'Email notifications', 'Assignments, reviews, digests', emc.enabled) +
+        tog('setWa', 'WhatsApp notifications', 'Send alerts on WhatsApp', wac.enabled) +
+        lbl('WhatsApp provider') +
+        val('Provider', wac.provider || 'twilio') +
+        val('API key / token', wac.hasApiKey ? '•••••• (set)' : '(not set)') +
+        val('API URL', wac.apiUrl || '—') +
+        val('Sender / from', wac.from || '—') +
+        '<div style="display:flex;gap:10px;margin-top:10px">' +
+          '<button class="btn" style="flex:1;background:var(--m-pri);border-color:var(--m-pri);color:#fff;min-height:50px" onclick="App.editWaProvider()">Edit provider</button>' +
+          '<button class="btn ghost" style="flex:1;min-height:50px" onclick="App.testWa()">Send test</button>' +
+        '</div>' +
+        '<button class="btn ghost" style="width:100%;min-height:48px;margin-top:10px" onclick="App.loadWaLogs()">View message log</button>' +
+        '<div id="waLog" style="margin-top:12px"></div>';
+    }).catch(errToast);
+  }
 
   /* ---------- dashboard ---------- */
   function renderDashboard() {
+    if (isMobile()) mAppbar({ title: 'Dashboard' });
     var main = $('#main');
     main.innerHTML = '<div class="spinner"></div>';
     call('getDashboard', S.filters).then(function (d) {
+      if (isMobile()) { renderDashboardMobile(d); return; }
       var st = d.stats;
       var cards = [
         ['Projects', st.projects, ''], ['Open tasks', st.openTasks, ''],
@@ -330,35 +395,75 @@
         ['Awaiting my approval', st.awaitingApproval, ''], ['Avg completion', st.completionAvg + '%', '']
       ];
       var roster = S.boot.roster;
-      var headHtml = '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
+      main.innerHTML =
+        '<div class="page-head"><h1>Dashboard</h1><div class="spacer"></div>' +
           (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') +
-        '</div>';
-      // Mobile shows the 4 personal-focus cards (Open tasks, My pending, My overdue,
-      // Avg completion) like the mockup; desktop keeps all 6.
-      var statCards = isMobile() ? [cards[1], cards[2], cards[3], cards[5]] : cards;
-      var statsHtml = '<div class="stat-grid">' + statCards.map(function (c) {
+        '</div>' +
+        '<div class="stat-grid">' + cards.map(function (c) {
           return '<div class="card stat ' + c[2] + '"><div class="n">' + c[1] + '</div><div class="l">' + c[0] + '</div></div>';
-        }).join('') + '</div>';
-      var workflowHtml = '<div class="card" style="padding:14px;margin-bottom:18px">' +
-          '<h4 style="margin-bottom:10px">Workflow distribution</h4>' + stageBar(d.stageCounts) +
-        '</div>';
-      var widgetsHtml = renderWidgets(d);
-      var filtersHtml = filtersBar(roster, d.projects);
-
-      if (isMobile()) {
-        // Touch-first order (matches the streamlined mockup): stats → tasks first,
-        // with filters and the insight widgets tucked into collapsible sections so
-        // the actual work is what you see, not a wall of widgets.
-        var anyFilter = !!(S.filters.q || S.filters.project || S.filters.assignee || S.filters.stage || S.filters.due);
-        main.innerHTML = headHtml + statsHtml +
-          '<details class="m-collapse"' + (anyFilter ? ' open' : '') + '><summary>Filter tasks</summary>' + filtersHtml + '</details>' +
-          '<div id="taskList"></div>' +
-          '<details class="m-collapse"><summary>Insights</summary>' + workflowHtml + widgetsHtml + '</details>';
-      } else {
-        main.innerHTML = headHtml + statsHtml + workflowHtml + widgetsHtml + filtersHtml + '<div id="taskList"></div>';
-      }
+        }).join('') + '</div>' +
+        '<div class="card" style="padding:14px;margin-bottom:18px"><h4 style="margin-bottom:10px">Workflow distribution</h4>' + stageBar(d.stageCounts) + '</div>' +
+        renderWidgets(d) + filtersBar(roster, d.projects) + '<div id="taskList"></div>';
       renderTaskRows(d.tasks);
     }).catch(errToast);
+  }
+
+  /* Mobile Home feed — design 02: stat tiles → workflow → needs attention → all tasks. */
+  function renderDashboardMobile(d) {
+    S._dashProjects = d.projects || [];
+    var st = d.stats, w = d.widgets, stages = S.boot.meta.stages;
+    var tiles = [
+      ['projects', st.projects, 'Projects', ''], ['open', st.openTasks, 'Open tasks', ''],
+      ['mypending', st.myPending, 'My pending', ''], ['awaiting', st.awaitingApproval, 'Awaiting me', ''],
+      ['overdue', st.myOverdue, 'Overdue', st.myOverdue ? 'alert' : ''], ['avg', st.completionAvg + '%', 'Avg done', '']
+    ];
+    var statsHtml = '<div class="m-stats">' + tiles.map(function (c) {
+      return '<div class="m-stat ' + c[3] + '" onclick="App.statTap(\'' + c[0] + '\')"><div class="n">' + c[1] + '</div><div class="l">' + c[2] + '</div></div>';
+    }).join('') + '</div>';
+
+    var counts = d.stageCounts, total = stages.reduce(function (s, k) { return s + (counts[k] || 0); }, 0) || 1;
+    var colors = { 'To Do': '#9aa0a6', 'In Progress': '#2f6fb0', 'Review': '#C1A051', 'Completed': '#3f8f4f' };
+    var bar = stages.map(function (k) { return '<i style="width:' + ((counts[k] || 0) / total * 100).toFixed(1) + '%;background:' + colors[k] + '"></i>'; }).join('');
+    var legend = stages.map(function (k) { return h(k) + ' ' + (counts[k] || 0); }).join(' · ');
+    var workflowHtml = '<div class="m-card m-workflow" style="margin-bottom:14px"><div class="m-cardh"><span class="t">Workflow distribution</span></div>' +
+      '<div class="bar">' + bar + '</div><div class="legend">' + legend + '</div></div>';
+
+    var nf = countFilters();
+    var allH = '<div class="m-section-h"><span class="t">All tasks</span>' +
+      '<button class="m-chip" style="background:#fff;border:1px solid var(--line)" onclick="App.openFilters()">Filter' + (nf ? ' · ' + nf : '') + '</button></div>';
+
+    $('#main').innerHTML = statsHtml + workflowHtml + needsAttentionCard(w) + allH + '<div id="taskList" class="m-list"></div>';
+    renderTaskRows(d.tasks);
+  }
+
+  function countFilters() {
+    var f = S.filters, n = 0;
+    ['q', 'project', 'assignee', 'stage', 'due'].forEach(function (k) { if (f[k]) n++; });
+    return n;
+  }
+
+  /* "Needs attention" card with Overdue / Due today / This week mini-tabs (design 02). */
+  function needsAttentionCard(w) {
+    var sets = { overdue: w.overdue || [], today: w.dueToday || [], week: w.dueWeek || [] };
+    var active = (S._naTab && sets[S._naTab]) ? S._naTab : 'overdue';
+    function chip(key, label) {
+      return '<button class="m-chip' + (active === key ? ' active' : '') + '" onclick="App.naTab(\'' + key + '\')">' +
+        label + (sets[key].length ? ' ' + sets[key].length : '') + '</button>';
+    }
+    var list = sets[active];
+    var items = list.length
+      ? list.slice(0, 3).map(function (t) {
+          return '<div onclick="App.openTask(\'' + h(t.id) + '\')" style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft);cursor:pointer">' +
+            '<div style="min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + h(t.title) + '</div>' +
+            '<div class="m-muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + h(t.project_name || '') + '</div></div>' +
+            (t.due_date ? '<span style="color:var(--danger);font-weight:800;font-size:13px;white-space:nowrap">' + fmtDate(t.due_date).slice(5) + '</span>' : '') +
+          '</div>';
+        }).join('')
+      : '<div class="m-muted" style="padding:10px 0;font-size:13px">Nothing here ✓</div>';
+    return '<div class="m-card" style="margin-bottom:6px"><div class="m-cardh"><span class="t">Needs attention</span>' +
+      '<button class="m-sheet-h" style="border:none;background:none;font-size:13px;color:var(--m-pri);font-weight:700" onclick="App.statTap(\'' + active + '\')">View all</button></div>' +
+      '<div class="m-chips">' + chip('overdue', 'Overdue') + chip('today', 'Due today') + chip('week', 'This week') + '</div>' +
+      items + '</div>';
   }
 
   /* ---------- dashboard widgets ---------- */
@@ -521,33 +626,28 @@
     return { s: ns[0], l: '→ ' + ns[0] };
   }
 
-  function taskMobileCard(t) {
-    var indent = (t._depth || 0) * 10;
-    var sub = t._depth > 0;
-    var progHtml = t.subtaskCount
-      ? '<div class="m-sub-prog"><div class="prog" style="flex:1;height:6px"><i style="width:' + (t.subtaskProgress || 0) + '%"></i></div><span class="small muted" style="white-space:nowrap">' + t.subtasksDone + '/' + t.subtaskCount + '</span></div>'
-      : '';
-    var dueHtml = t.due_date
-      ? (t.overdue ? '<span class="badge over">' + fmtDate(t.due_date) + '</span>' : '<span class="badge status">' + fmtDate(t.due_date) + '</span>')
-      : '';
-    var act = cardStageAction(t);
-    var actionsHtml = '<div class="m-task-actions">' +
-      (act ? '<button class="m-act primary" onclick="event.stopPropagation();App.quickStage(\'' + h(t.id) + '\',\'' + h(act.s) + '\')">' + h(act.l) + '</button>' : '') +
-      '<button class="m-act" onclick="event.stopPropagation();App.openTask(\'' + h(t.id) + '\')">Details</button>' +
-    '</div>';
-    return '<div class="m-task-card' + (sub ? ' sub' : '') + '"' + (indent ? ' style="margin-left:' + indent + 'px"' : '') + ' onclick="App.openTask(\'' + h(t.id) + '\')">' +
-      '<div class="m-task-title">' + (sub ? '<span class="m-task-indent">↳</span>' : '') + h(t.title) + '</div>' +
-      '<div class="m-task-meta">' +
-        (t.project_name ? '<span class="m-task-proj">' + h(t.project_name) + '</span>' : '') +
-        priBadge(t.priority) + dueHtml +
-      '</div>' +
-      progHtml +
-      '<div class="m-task-footer">' +
-        '<span class="m-assignee"><span class="m-avatar">' + h(initials(t.assignee_name || '?')) + '</span>' +
-        '<span class="m-assignee-name">' + h(t.assignee_name || 'Unassigned') + '</span></span>' +
-        '<span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span>' +
-      '</div>' +
-      actionsHtml +
+  function priPill(p) { return p ? '<span class="badge pri-' + h(p) + '">' + h(p) + '</span>' : ''; }
+
+  /* In-place status control button (My Tasks) → opens the status options sheet. */
+  function mStatusBtn(t) {
+    return '<button class="m-statusctl" onclick="event.stopPropagation();App.statusSheet(\'' + h(t.id) + '\')">' + h(t.stage) + ' ▾</button>';
+  }
+
+  /* The repeating task card used on every mobile list (dashboard, board, My Tasks).
+     opts.statusCtl → show the in-place Status control (My Tasks). ⋯ opens Quick Actions. */
+  function mTaskCard(t, opts) {
+    opts = opts || {};
+    var sub = (t._depth || 0) > 0;
+    var proj = t.project_name || t.project_id || '';
+    var due = t.due_date ? '<span class="due' + (t.overdue ? ' over' : '') + '">' + (opts.statusCtl ? 'Due ' : '') + fmtDate(t.due_date) + '</span>' : '';
+    var pills = opts.statusCtl
+      ? '<div class="pills">' + priPill(t.priority) + due + '<span class="spacer"></span>' + mStatusBtn(t) + '</div>'
+      : '<div class="pills"><span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span>' + priPill(t.priority) + due + '</div>';
+    return '<div class="m-task' + (sub ? ' sub' : '') + '" onclick="App.openTask(\'' + h(t.id) + '\')">' +
+      '<button class="more" aria-label="Quick actions" onclick="event.stopPropagation();App.quickActions(\'' + h(t.id) + '\')">⋯</button>' +
+      '<div class="t">' + (sub ? '<span class="m-task-indent">↳ </span>' : '') + h(t.title) + '</div>' +
+      '<div class="meta"><span class="proj">' + h(proj) + '</span><span class="who">' + h(t.assignee_name || 'Unassigned') + '</span></div>' +
+      pills +
     '</div>';
   }
 
@@ -589,7 +689,7 @@
     if (!tasks.length) { host.innerHTML = '<div class="card" style="padding:24px"><p class="muted center">No tasks match.</p></div>'; return; }
     var ordered = buildFlatTree_(tasks);
     if (isMobile()) {
-      host.innerHTML = '<div class="m-task-list">' + ordered.map(taskMobileCard).join('') + '</div>';
+      host.innerHTML = ordered.map(function (t) { return mTaskCard(t); }).join('');
     } else {
       host.innerHTML = '<table class="tbl"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Stage</th></tr></thead><tbody>' +
         ordered.map(function (t) { return '<tr data-task-id="'+h(t.id)+'">'+dashRowCells(t)+'</tr>'; }).join('') + '</tbody></table>';
@@ -878,6 +978,135 @@
     nav: navigate,
     openTask: openTask,
     openProject: openProject,
+
+    /* ───────── mobile: stat tiles · needs-attention · bottom sheets ───────── */
+    statTap: function (key) {
+      if (key === 'projects') return navigate('projects');
+      if (key === 'mypending' || key === 'awaiting') return navigate('mytasks');
+      if (key === 'overdue' || key === 'today' || key === 'week') { S.filters = { due: key }; renderDashboard(); }
+    },
+    naTab: function (k) { S._naTab = k; renderDashboard(); },
+    sheetBg: function (e) { if (e.target.classList.contains('m-sheet-ov')) closeSheet(); },
+    closeSheet: closeSheet,
+    mPicked: function (i) { var fn = window._mPick, v = (window._mPickVals || [])[i]; if (fn) fn(v); },
+
+    /* Filters sheet (design 03) */
+    openFilters: function () {
+      var f = S.filters || {};
+      function sel(id, ph, opts, cur) {
+        return '<select id="' + id + '" class="m-fsel">' + '<option value="">' + ph + '</option>' +
+          opts.map(function (o) { return '<option value="' + h(o.v) + '"' + (cur === o.v ? ' selected' : '') + '>' + h(o.t) + '</option>'; }).join('') + '</select>';
+      }
+      openSheet(
+        '<div class="m-sheet-h"><span class="t">Filters</span><button class="a" onclick="App.clearMFilters()">Clear all</button></div>' +
+        '<div class="lbl">Project</div>' + sel('mfProject', 'All projects', (S._dashProjects || []).map(function (p) { return { v: p.id, t: p.name }; }), f.project) +
+        '<div class="lbl">Assignee</div>' + sel('mfAssignee', 'Any assignee', (S.boot.roster || []).filter(function (u) { return u.active; }).map(function (u) { return { v: u.email, t: u.name }; }), f.assignee) +
+        '<div class="lbl">Stage</div>' + sel('mfStage', 'Any stage', S.boot.meta.stages.map(function (s) { return { v: s, t: s }; }), f.stage) +
+        '<div class="lbl">Priority</div>' + sel('mfPriority', 'Any priority', S.boot.meta.priorities.map(function (s) { return { v: s, t: s }; }), f.priority) +
+        '<div class="lbl">Due date</div>' + sel('mfDue', 'Any due date', [{ v: 'overdue', t: 'Overdue' }, { v: 'today', t: 'Due today' }, { v: 'week', t: 'Due this week' }], f.due) +
+        '<div class="m-sticky-btn"><button class="m-cont" style="background:var(--m-pri);color:#fff" onclick="App.applyMFilters()">Show results</button></div>'
+      );
+    },
+    clearMFilters: function () { S.filters = {}; closeSheet(); renderDashboard(); },
+    applyMFilters: function () {
+      S.filters = {
+        project: ($('#mfProject') || {}).value || '', assignee: ($('#mfAssignee') || {}).value || '',
+        stage: ($('#mfStage') || {}).value || '', priority: ($('#mfPriority') || {}).value || '',
+        due: ($('#mfDue') || {}).value || '', q: (S.filters || {}).q || ''
+      };
+      closeSheet(); renderDashboard();
+    },
+
+    /* Quick actions sheet (design 08) — ⋯ on any task card */
+    quickActions: function (id) {
+      busy(true);
+      call('getTaskDetail', id).then(function (d) {
+        busy(false); S._qa = d;
+        var stages = d.nextStages || [];
+        var statusOpts = stages.length
+          ? '<div class="lbl">Change status</div><div class="m-statusopts">' +
+              '<button class="m-statusopt" style="background:' + stageBg(d.stage) + ';color:' + stageFg(d.stage) + '">' + h(d.stage) + '</button>' +
+              stages.map(function (s) { return '<button class="m-statusopt" style="background:' + stageBg(s) + ';color:' + stageFg(s) + '" onclick="App.qaStage(\'' + h(id) + '\',\'' + h(s) + '\')">→ ' + h(s) + '</button>'; }).join('') + '</div>'
+          : '';
+        function row(k, v, act) { return '<button class="m-pickrow" onclick="' + act + '"><span class="col"><span class="k">' + k + '</span><span class="v">' + h(v) + '</span></span><span class="chev">›</span></button>'; }
+        openSheet('<div class="m-sheet-h"><span class="t">' + h(d.title) + '</span></div>' +
+          '<div class="m-muted" style="margin:-2px 0 6px">Quick actions</div>' + statusOpts +
+          '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">' +
+            (d.perms.reassign ? row('Assignee', d.assignee_name || 'Unassigned', 'App.qaPick(\'' + h(id) + '\',\'assignee\')') : '') +
+            (d.perms.editDefinition ? row('Priority', d.priority || '— No priority —', 'App.qaPick(\'' + h(id) + '\',\'priority\')') : '') +
+            (d.perms.editDefinition ? row('Due date', d.due_date ? fmtDate(d.due_date) : '—', 'App.qaDue(\'' + h(id) + '\')') : '') +
+          '</div>');
+      }).catch(function (e) { busy(false); errToast(e); });
+    },
+    qaStage: function (id, val) { closeSheet(); call('setStageQuick', id, val).then(function () { toast('Status updated'); refreshCurrentList(); refreshBell(); }).catch(errToast); },
+    qaPick: function (id, field) {
+      var d = S._qa || {};
+      if (field === 'assignee') {
+        mOptions('Assignee', [{ v: '', t: '— Unassigned —' }].concat((d.assignable || []).map(function (u) { return { v: u.email, t: u.name }; })), d.assignee_email,
+          function (v) { closeSheet(); call('reassignTask', id, v).then(function () { toast('Assignee updated'); refreshCurrentList(); }).catch(errToast); });
+      } else {
+        mOptions('Priority', [{ v: '', t: '— No priority —' }].concat(S.boot.meta.priorities.map(function (p) { return { v: p, t: p }; })), d.priority || '',
+          function (v) { closeSheet(); call('updateTaskDefinition', id, { priority: v }).then(function () { toast('Priority updated'); refreshCurrentList(); }).catch(errToast); });
+      }
+    },
+    qaDue: function (id) {
+      var cur = (S._qa && S._qa.due_date) ? fmtDate(S._qa.due_date) : '';
+      var v = prompt('Due date (YYYY-MM-DD) — leave blank to clear:', cur);
+      if (v === null) return;
+      closeSheet(); call('updateTaskDefinition', id, { due_date: v.trim() }).then(function () { toast('Due date updated'); refreshCurrentList(); }).catch(errToast);
+    },
+
+    /* In-place status control (My Tasks Status ▾) */
+    statusSheet: function (id) {
+      busy(true);
+      call('getTaskDetail', id).then(function (d) {
+        busy(false);
+        var stages = d.nextStages || [];
+        if (!stages.length) return toast('No status change available here.');
+        openSheet('<div class="m-sheet-h"><span class="t">' + h(d.title) + '</span></div>' +
+          '<div class="lbl">Change status</div><div class="m-statusopts">' +
+          stages.map(function (s) { return '<button class="m-statusopt" style="background:' + stageBg(s) + ';color:' + stageFg(s) + '" onclick="App.qaStage(\'' + h(id) + '\',\'' + h(s) + '\')">→ ' + h(s) + '</button>'; }).join('') + '</div>');
+      }).catch(function (e) { busy(false); errToast(e); });
+    },
+
+    /* More sheet (design: Team · Notification settings · Switch account) */
+    openMore: function () {
+      var rows = [];
+      if (S.boot.canManageUsers) rows.push(['Team &amp; access', 'App.navMore(\'admin\')']);
+      rows.push(['Notification settings', 'App.navMore(\'settings\')']);
+      rows.push(['Switch account', 'App.switchAcct()']);
+      openSheet('<div class="m-sheet-h"><span class="t">More</span><button class="a" onclick="App.closeSheet()">Done</button></div>' +
+        '<div class="m-optlist" style="margin-top:6px">' +
+        rows.map(function (r) { return '<button class="m-opt" onclick="' + r[1] + '">' + r[0] + '<span class="chev" style="color:var(--muted)">›</span></button>'; }).join('') + '</div>');
+      [].forEach.call(document.querySelectorAll('#bottomNav a'), function (a) { a.classList.toggle('active', a.getAttribute('data-view') === 'more'); });
+    },
+    navMore: function (view) { closeSheet(); S._moreActive = true; if (view === 'admin') renderAdmin(); else renderSettings(); },
+    switchAcct: function () { closeSheet(); window.open(switchAccountUrl(), '_blank'); },
+    openNotifs: function () { if (isMobile()) renderNotifsScreen(); else App.toggleNotif(); },
+    navBackHome: function () { navigate(S._prevView || 'dashboard'); },
+    markAllM: function () { call('markAllNotificationsRead').then(function () { refreshBell(); renderNotifsScreen(); }); },
+    openFromNotifM: function (id, taskId) { call('markNotificationRead', id).then(refreshBell); if (taskId) openTask(taskId); else renderNotifsScreen(); },
+    toggleSetting: function (id) {
+      var el = document.getElementById(id); if (!el) return;
+      var on = !el.classList.contains('on');
+      var fn = id === 'setEmail' ? 'toggleEmail' : 'toggleWhatsApp';
+      call(fn, on).then(function (r) { el.classList.toggle('on', r.enabled); toast((id === 'setEmail' ? 'Email' : 'WhatsApp') + ' ' + (r.enabled ? 'on' : 'off')); }).catch(errToast);
+    },
+    editWaProvider: function () {
+      call('getWhatsAppConfig').then(function (wac) {
+        openSheet('<div class="m-sheet-h"><span class="t">WhatsApp provider</span></div>' +
+          '<div class="lbl">Provider</div><select id="waProvider" class="m-fsel">' + ['twilio', 'wati', 'meta'].map(function (p) { return '<option' + (wac.provider === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') + '</select>' +
+          '<div class="lbl">API key / token</div><input id="waApiKey" class="m-fsel" type="password" placeholder="Leave blank to keep existing">' +
+          '<div class="lbl">API URL</div><input id="waApiUrl" class="m-fsel" value="' + h(wac.apiUrl || '') + '" placeholder="https://…">' +
+          '<div class="lbl">Sender / from</div><input id="waFrom" class="m-fsel" value="' + h(wac.from || '') + '" placeholder="whatsapp:+1415…">' +
+          '<div class="m-sticky-btn"><button class="m-cont" style="background:var(--m-pri);color:#fff" onclick="App.saveWaM()">Save config</button></div>');
+      }).catch(errToast);
+    },
+    saveWaM: function () {
+      var cfg = { provider: ($('#waProvider') || {}).value || 'twilio', apiUrl: ($('#waApiUrl') || {}).value || '', from: ($('#waFrom') || {}).value || '' };
+      var key = ($('#waApiKey') || {}).value || ''; if (key) cfg.apiKey = key;
+      call('saveWhatsAppConfig', cfg).then(function () { toast('WhatsApp config saved'); closeSheet(); if (S.view === 'settings') renderSettings(); }).catch(errToast);
+    },
     closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; S.modalTaskId = null; },
     bgClose: function (e) { if (e.target.classList.contains('overlay')) App.closeModal(); },
     closeConfirm: function (e) {
@@ -1389,8 +1618,9 @@
   /* ---------- notifications ---------- */
   function refreshBell() {
     call('unreadCount').then(function (n) {
-      var b = $('#bellCount'); if (!b) return;
-      b.textContent = n; b.classList.toggle('hidden', !n);
+      [].forEach.call(document.querySelectorAll('.bellCount'), function (b) {
+        b.textContent = n; b.classList.toggle('hidden', !n);
+      });
     }).catch(function () {});
   }
   function loadNotifs() {
