@@ -197,6 +197,18 @@
   }
 
   function renderAccess(b) {
+    if (isMobile()) {
+      $('#root').innerHTML = '<div class="m-signin">' +
+        '<div class="logo">ADI<span class="dot"> Designs</span></div>' +
+        '<div class="sub">Work &amp; Task Management</div>' +
+        '<h2>Sign in</h2>' +
+        '<div class="m-muted" style="margin-bottom:20px">' + h(b.message || 'Sign in with your ADI Google account to continue.') + '</div>' +
+        (b.email ? '<div class="acct"><span class="av">' + h(initials(b.email)) + '</span><span class="mid"><span class="nm">Signed in as</span><span class="em">' + h(b.email) + '</span></span></div>' : '') +
+        '<div class="or">or</div>' +
+        '<a class="cont" href="' + switchAccountUrl() + '" target="_blank" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Use a different Google account</a>' +
+      '</div>';
+      return;
+    }
     $('#root').innerHTML =
       '<div class="access card">' +
         '<div class="logo">ADI<span class="dot"> Designs</span></div>' +
@@ -333,7 +345,7 @@
   /* ---------- mobile: Notifications feed (design 12) ---------- */
   function renderNotifsScreen() {
     S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view;
-    mAppbar({ title: 'Notifications', back: 'App.navBackHome()' });
+    mAppbar({ title: 'Notifications', back: 'App.navBackHome()', plain: true });
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
     call('listMyNotifications', 40).then(function (list) {
       var header = '<div class="m-section-h"><span class="t">Recent</span>' +
@@ -353,7 +365,7 @@
   /* ---------- mobile: Notification settings (design 11) ---------- */
   function renderSettings() {
     S.view = 'settings';
-    mAppbar({ title: 'Notifications', back: 'App.navBackHome()', navKey: 'more' });
+    mAppbar({ title: 'Notifications', back: 'App.navBackHome()', plain: true, navKey: 'more' });
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
     Promise.all([call('getEmailConfig'), call('getWhatsAppConfig')]).then(function (r) {
       var emc = r[0], wac = r[1];
@@ -705,15 +717,41 @@
 
   /* ---------- projects ---------- */
   function renderProjects() {
+    if (isMobile()) mAppbar({ title: 'Projects' });
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
     call('listProjects').then(function (ps) {
       ps.forEach(function (p) { _projCache[p.id] = p.name; });
+      if (isMobile()) {
+        main.innerHTML =
+          (S.boot.canCreateProject ? '<button class="m-addmember" style="background:var(--m-gold);color:#3a2a10" onclick="App.newProject()"><span style="font-size:20px">+</span> New project</button>' : '') +
+          (ps.length ? '<div class="m-list">' + ps.map(mProjCard).join('') + '</div>' : '<div class="m-empty">No projects yet.</div>');
+        return;
+      }
       main.innerHTML =
         '<div class="page-head"><h1>Projects</h1><div class="spacer"></div>' +
           (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') + '</div>' +
         (ps.length ? '<div class="proj-grid">' + ps.map(projCard).join('') + '</div>'
                    : '<div class="card" style="padding:28px"><p class="muted center">No projects yet.</p></div>');
     }).catch(errToast);
+  }
+  function projStatusPill(s) {
+    var bg = s === 'Active' ? '#e6f3e9' : s === 'Completed' ? '#e7f0fa' : '#fff3e0';
+    var fg = s === 'Active' ? '#2f7a40' : s === 'Completed' ? '#235c97' : '#a6611a';
+    return '<span class="badge" style="background:' + bg + ';color:' + fg + '">' + h(s) + '</span>';
+  }
+  /* Mobile project card (design 05). */
+  function mProjCard(p) {
+    var canAdd = canCreateTaskInProject(p);
+    return '<div class="m-card m-proj">' +
+      '<div class="top"><h3>' + h(p.name) + '</h3>' + projStatusPill(p.status) + '</div>' +
+      '<div class="sub">Owner: ' + h(p.owner_name) + ' · ' + p.openCount + ' open / ' + p.taskCount + ' tasks</div>' +
+      '<div class="bar"><i style="width:' + p.completion + '%"></i></div>' +
+      '<div class="pct">' + p.completion + '% complete</div>' +
+      '<div class="acts">' +
+        (canAdd ? '<button class="btn" style="background:var(--m-gold);border-color:var(--m-gold);color:#3a2a10" onclick="App.newTask(\'' + h(p.id) + '\')">+ Task</button>' : '') +
+        '<button class="btn ghost" onclick="App.openProject(\'' + h(p.id) + '\')">Open board</button>' +
+      '</div>' +
+    '</div>';
   }
 
   function canCreateTaskInProject(p) {
@@ -741,6 +779,7 @@
       var p = res[0].filter(function (x){return x.id===id;})[0] || { name: 'Project' };
       res[0].forEach(function (x){_projCache[x.id]=x.name;});
       var tasks = res[1];
+      if (isMobile()) { S._boardData = { p: p, id: id, tasks: tasks }; renderBoardMobile(); return; }
       var byStage = {}; S.boot.meta.stages.forEach(function (s){byStage[s]=[];});
       tasks.filter(function(t){return !t.parent_task_id;}).forEach(function (t){ (byStage[t.stage]||[]).push(t); });
       var subByParent = {}; tasks.filter(function(t){return t.parent_task_id;}).forEach(function(t){ (subByParent[t.parent_task_id]=subByParent[t.parent_task_id]||[]).push(t); });
@@ -778,15 +817,47 @@
     return u.level === 'L1' || (u.level === 'L2' && p.owner_email === u.email);
   }
 
+  /* Mobile project board — swipeable stage tabs (design 06). */
+  function renderBoardMobile() {
+    var bd = S._boardData; if (!bd) return;
+    var p = bd.p, tasks = bd.tasks, stages = S.boot.meta.stages;
+    mAppbar({ title: p.name, back: 'App.nav(\'projects\')', plain: true, navKey: 'projects' });
+    var byStage = {}; stages.forEach(function (s) { byStage[s] = []; });
+    tasks.forEach(function (t) { (byStage[t.stage] = byStage[t.stage] || []).push(t); });
+    var active = (S._boardStage && byStage[S._boardStage]) ? S._boardStage : stages[0];
+    var tabs = '<div class="m-stagetabs">' + stages.map(function (s) {
+      return '<button class="m-stagetab' + (active === s ? ' active' : '') + '" onclick="App.boardStage(\'' + h(s) + '\')">' + h(s) + '<span class="ct">' + byStage[s].length + '</span></button>';
+    }).join('') + '</div>';
+    var list = byStage[active] || [];
+    var body = list.length
+      ? list.map(function (t) { t._depth = t.parent_task_id ? 1 : 0; return mTaskCard(t); }).join('')
+      : '<div class="m-empty">No tasks in ' + h(active) + '.</div>';
+    $('#main').innerHTML = tabs + '<div class="m-list">' + body + '</div>';
+  }
+
   /* ---------- my tasks ---------- */
   function renderMyTasks() {
+    if (isMobile()) mAppbar({ title: 'My Tasks' });
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
     call('listMyWork').then(function (w) {
+      if (isMobile()) return renderMyTasksMobile(w);
       main.innerHTML = '<div class="page-head"><h1>My Tasks</h1></div>' +
         (w.awaiting.length ? '<h4 style="margin:6px 0 8px">Awaiting my approval (' + w.awaiting.length + ')</h4>' + myTaskTable(w.awaiting, true) : '') +
         '<h4 style="margin:16px 0 8px">Assigned to me (' + w.assignedToMe.length + ')</h4>' + myTaskTable(w.assignedToMe, false) +
         '<h4 style="margin:16px 0 8px">Assigned by me (' + w.assignedByMe.length + ')</h4>' + myTaskTable(w.assignedByMe, true);
     }).catch(errToast);
+  }
+  /* Mobile My Tasks — segmented control (Awaiting · To me · By me) + status control (design 04). */
+  function renderMyTasksMobile(w) {
+    var buckets = { awaiting: w.awaiting, tome: w.assignedToMe, byme: w.assignedByMe };
+    var active = (S._mtTab && buckets[S._mtTab]) ? S._mtTab : 'awaiting';
+    var seg = '<div class="m-seg">' +
+      [['awaiting', 'Awaiting', w.awaiting], ['tome', 'To me', w.assignedToMe], ['byme', 'By me', w.assignedByMe]].map(function (t) {
+        return '<button class="' + (active === t[0] ? 'active' : '') + '" onclick="App.mtTab(\'' + t[0] + '\')">' + t[1] + ' ' + t[2].length + '</button>';
+      }).join('') + '</div>';
+    var list = buildFlatTree_(buckets[active]);
+    var body = list.length ? list.map(function (t) { return mTaskCard(t, { statusCtl: true }); }).join('') : '<div class="m-empty">Nothing here.</div>';
+    $('#main').innerHTML = seg + '<div class="m-list">' + body + '</div>';
   }
   function myTaskTable(tasks, withAssignee) {
     if (!tasks.length) return '<div class="card" style="padding:16px"><p class="muted center small">Nothing here.</p></div>';
@@ -808,13 +879,74 @@
       '<td>'+priBadge(t.priority)+'</td><td class="small">'+dueCell(t)+'</td><td>'+statusControl(t)+'</td>';
   }
 
-  /* ---------- task modal ---------- */
+  /* ---------- task detail ---------- */
   function openTask(id) {
     busy(true);
     call('getTaskDetail', id).then(function (d) { busy(false); renderTaskModal(d); }).catch(function (e) { busy(false); errToast(e); });
   }
 
+  /* Router: every existing call site (openTask + the inline App actions) goes
+     through here, so it renders the full-screen page on mobile and the dialog on
+     desktop without changing those call sites. */
   function renderTaskModal(d) {
+    if (isMobile()) renderTaskDetailMobile(d); else renderTaskModalDesktop(d);
+  }
+
+  function assignOptsFor(d) {
+    return (d.assignable || []).map(function (u) {
+      return '<option value="' + h(u.email) + '"' + (u.email === d.assignee_email ? ' selected' : '') + '>' + h(u.name) + '</option>';
+    }).join('');
+  }
+
+  /* Full-screen task detail (design 07) — reuses the same checklist/subtask/
+     attachment/comment/history helpers and stage actions as the desktop dialog. */
+  function renderTaskDetailMobile(d) {
+    S.modalTaskId = d.id;
+    S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view;
+    document.documentElement.classList.add('detail-open');
+    mAppbar({ title: 'Task', back: 'App.closeDetail()', plain: true });
+    var p = d.perms, id = d.id, primary = '';
+    if (p.advance && d.stage === 'To Do') primary = detailBtn('startTask', id, 'Start');
+    else if (p.advance && d.stage === 'In Progress') primary = detailBtn('submitForReview', id, 'Submit for review');
+    else if (p.selfSubtask && d.stage !== 'Completed') primary = detailBtn('approveTask', id, 'Mark complete');
+    else if (p.approve && d.stage === 'Review') primary = detailBtn('approveTask', id, 'Approve');
+    else if (p.approve && d.stage === 'Completed') primary = '<button class="primary" style="background:#fff;border:1px solid var(--line);color:var(--m-pri)" onclick="App.stage(\'reopenTask\',\'' + h(id) + '\')">Reopen</button>';
+    var sendBack = (p.approve && d.stage === 'Review') ? '<button class="danger-act" onclick="App.sendBack(\'' + h(id) + '\')">Send back</button>' : '';
+    var doneCt = d.checklist.filter(function (c) { return c.done; }).length;
+
+    var html = '<div class="m-detail">' +
+      '<div class="dhead"><span class="badge ' + stageClass(d.stage) + '">' + h(d.stage) + '</span>' + priPill(d.priority) +
+        (d.overdue ? '<span class="badge over">Overdue</span>' : '') + '<span class="dproj">' + h(d.project_name) + '</span></div>' +
+      '<h1>' + h(d.title) + '</h1>' +
+      (d.description ? '<p style="white-space:pre-wrap;margin:10px 0 0;line-height:1.5">' + h(d.description) + '</p>' : '') +
+      primary + sendBack +
+      '<div class="m-card" style="margin-bottom:12px">' +
+        '<div class="m-kv"><span class="k">Assignee</span><span class="v">' + h(d.assignee_name || 'Unassigned') + '</span></div>' +
+        '<div class="m-kv"><span class="k">Priority</span><span class="v">' + h(d.priority || '—') + '</span></div>' +
+        '<div class="m-kv"><span class="k">Due date</span><span class="v">' + (d.due_date ? h(fmtDate(d.due_date)) : '—') + '</span></div>' +
+        '<div class="m-kv"><span class="k">Created by</span><span class="v">' + h(d.creator_name) + '</span></div>' +
+      '</div>' +
+      '<div class="m-card" style="margin-bottom:12px"><div class="m-cardh"><span class="t">Checklist</span><span class="c">' + doneCt + ' / ' + d.checklist.length + '</span></div>' +
+        checklistHtml(d.checklist, p.editExecution) +
+        (p.editExecution ? '<div class="row" style="margin-top:10px;gap:8px"><input id="chkNew" placeholder="Add item…" style="flex:1"><button class="btn sm" onclick="App.addChk(\'' + h(id) + '\')">Add</button></div>' : '') +
+      '</div>' +
+      '<button class="m-accordion" onclick="App.toggleAcc(\'mSubs\')">Subtasks · ' + (d.subtasks ? d.subtasks.length : 0) + '<span class="chev">›</span></button>' +
+      '<div id="mSubs" class="hidden" style="margin-top:10px">' + subtasksHtml(d.subtasks) +
+        (p.canCreateSubtask ? '<button class="btn ghost sm" style="margin-top:8px" onclick="App.newSubtask(\'' + h(id) + '\')">+ Add subtask</button>' : '') + '</div>' +
+      (p.editDefinition ? '<button class="m-accordion" style="margin-top:12px" onclick="App.toggleAcc(\'mEditor\')">Edit details<span class="chev">›</span></button><div id="mEditor" class="hidden" style="margin-top:10px">' + defEditor(d, assignOptsFor(d), p) + '</div>' : '') +
+      '<div class="section"><div class="m-cardh"><span class="t">Attachments</span></div><div id="attList">' + attHtml(d.attachments, S.boot.user) + '</div>' +
+        (p.comment ? '<div class="row wrap" style="margin-top:8px"><button class="btn ghost sm" onclick="App.pickFile(\'' + h(id) + '\')">⬆ Upload</button><button class="btn ghost sm" onclick="App.linkFile(\'' + h(id) + '\')">🔗 Link</button><input type="file" id="fileInput" class="hidden"></div>' : '') + '</div>' +
+      '<div class="section"><div class="m-cardh"><span class="t">Comments</span></div><div id="cmtList">' + commentsHtml(d.comments) + '</div></div>' +
+      '<div class="section"><div class="m-cardh"><span class="t">History</span></div>' + activityHtml(d.activity) + '</div>' +
+      (p.editDefinition ? '<button class="danger-act" style="margin-top:16px" onclick="App.deleteTask(\'' + h(id) + '\')">Delete task</button>' : '') +
+    '</div>' +
+    (p.comment ? '<div class="m-composer"><input id="cmtNew" placeholder="Write a comment…"><button class="send" aria-label="Send" onclick="App.addCmt(\'' + h(id) + '\')">＋</button></div>' : '');
+    $('#main').innerHTML = html;
+    window._task = d;
+  }
+  function detailBtn(fn, id, label) { return '<button class="primary" onclick="App.stage(\'' + h(fn) + '\',\'' + h(id) + '\')">' + label + '</button>'; }
+
+  function renderTaskModalDesktop(d) {
     S.modalTaskId = d.id;
     var p = d.perms;
     var stageActions = [];
@@ -986,6 +1118,47 @@
       if (key === 'overdue' || key === 'today' || key === 'week') { S.filters = { due: key }; renderDashboard(); }
     },
     naTab: function (k) { S._naTab = k; renderDashboard(); },
+    mtTab: function (k) { S._mtTab = k; renderMyTasks(); },
+    boardStage: function (s) { S._boardStage = s; renderBoardMobile(); },
+
+    /* Team (mobile) */
+    addMemberSheet: function () {
+      openSheet('<div class="m-sheet-h"><span class="t">Add team member</span></div>' +
+        '<div class="lbl">Email</div><input id="uEmail" class="m-fsel" placeholder="email@gmail.com">' +
+        '<div class="lbl">Full name</div><input id="uName" class="m-fsel" placeholder="Full name">' +
+        '<div class="lbl">Level</div><select id="uLevel" class="m-fsel"><option value="L3">L3 · Team Member</option><option value="L2">L2 · Project Lead</option><option value="L1">L1 · Director</option><option value="L4">L4 · Junior Member</option></select>' +
+        '<div class="lbl">Mobile number (optional)</div><input id="uPhone" class="m-fsel" placeholder="+91XXXXXXXXXX">' +
+        '<div class="m-sticky-btn"><button class="m-cont" style="background:var(--m-pri);color:#fff" onclick="App.addUserM()">Add / update</button></div>');
+    },
+    addUserM: function () {
+      var email = ($('#uEmail') || {}).value.trim(), name = ($('#uName') || {}).value.trim(),
+          level = ($('#uLevel') || {}).value, phone = ($('#uPhone') || {}).value.trim();
+      if (!email) return toast('Email required', true);
+      if (phone && !/^\+[1-9]\d{6,14}$/.test(phone)) return toast('Invalid mobile number. Use +91XXXXXXXXXX', true);
+      call('addUser', email, name, level, phone).then(function () { toast('Saved'); closeSheet(); renderAdmin(); }).catch(errToast);
+    },
+    memberMenu: function (email) {
+      var u = (S._team || []).filter(function (x) { return x.email === email; })[0] || {};
+      openSheet('<div class="m-sheet-h"><span class="t">' + h(u.name || email) + '</span></div><div class="m-optlist">' +
+        '<button class="m-opt" onclick="App.changeLevel(\'' + h(email) + '\')">Change level<span class="chev" style="color:var(--muted)">›</span></button>' +
+        '<button class="m-opt" onclick="App.editPhone(\'' + h(email) + '\')">Edit mobile number<span class="chev" style="color:var(--muted)">›</span></button>' +
+        (u.active ? '<button class="m-opt" style="color:var(--danger)" onclick="App.setActiveM(\'' + h(email) + '\',false)">Deactivate</button>'
+                  : '<button class="m-opt" onclick="App.setActiveM(\'' + h(email) + '\',true)">Reactivate</button>') +
+      '</div>');
+    },
+    changeLevel: function (email) {
+      var u = (S._team || []).filter(function (x) { return x.email === email; })[0] || {};
+      mOptions('Level', [{ v: 'L1', t: 'L1 · Director' }, { v: 'L2', t: 'L2 · Project Lead' }, { v: 'L3', t: 'L3 · Team Member' }, { v: 'L4', t: 'L4 · Junior Member' }], u.level,
+        function (v) { closeSheet(); call('updateUser', email, { level: v }).then(function () { toast('Level updated'); renderAdmin(); }).catch(errToast); });
+    },
+    editPhone: function (email) {
+      closeSheet();
+      var u = (S._team || []).filter(function (x) { return x.email === email; })[0] || {};
+      var v = prompt('Mobile number (international, e.g. +91…):', u.phone || '');
+      if (v === null) return;
+      call('updateUserPhone', email, v.trim()).then(function () { toast('Mobile saved'); renderAdmin(); }).catch(errToast);
+    },
+    setActiveM: function (email, active) { closeSheet(); call('updateUser', email, { active: active }).then(function () { toast(active ? 'Reactivated' : 'Deactivated'); renderAdmin(); }).catch(errToast); },
     sheetBg: function (e) { if (e.target.classList.contains('m-sheet-ov')) closeSheet(); },
     closeSheet: closeSheet,
     mPicked: function (i) { var fn = window._mPick, v = (window._mPickVals || [])[i]; if (fn) fn(v); },
@@ -1080,7 +1253,7 @@
         rows.map(function (r) { return '<button class="m-opt" onclick="' + r[1] + '">' + r[0] + '<span class="chev" style="color:var(--muted)">›</span></button>'; }).join('') + '</div>');
       [].forEach.call(document.querySelectorAll('#bottomNav a'), function (a) { a.classList.toggle('active', a.getAttribute('data-view') === 'more'); });
     },
-    navMore: function (view) { closeSheet(); S._moreActive = true; if (view === 'admin') renderAdmin(); else renderSettings(); },
+    navMore: function (view) { closeSheet(); S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view; if (view === 'admin') renderAdmin(); else renderSettings(); },
     switchAcct: function () { closeSheet(); window.open(switchAccountUrl(), '_blank'); },
     openNotifs: function () { if (isMobile()) renderNotifsScreen(); else App.toggleNotif(); },
     navBackHome: function () { navigate(S._prevView || 'dashboard'); },
@@ -1107,7 +1280,9 @@
       var key = ($('#waApiKey') || {}).value || ''; if (key) cfg.apiKey = key;
       call('saveWhatsAppConfig', cfg).then(function () { toast('WhatsApp config saved'); closeSheet(); if (S.view === 'settings') renderSettings(); }).catch(errToast);
     },
-    closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; S.modalTaskId = null; },
+    closeModal: function () { $('#modalHost').innerHTML = ''; window._task = null; S.modalTaskId = null; document.documentElement.classList.remove('detail-open'); },
+    closeDetail: function () { document.documentElement.classList.remove('detail-open'); S.modalTaskId = null; window._task = null; navigate(S._prevView || 'dashboard'); },
+    toggleAcc: function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('hidden'); },
     bgClose: function (e) { if (e.target.classList.contains('overlay')) App.closeModal(); },
     closeConfirm: function (e) {
       if (e && !e.target.classList.contains('overlay')) return;
@@ -1116,11 +1291,15 @@
 
     /* filters */
     applyFilters: function () {
-      S.filters = {
-        q: ($('#fq')||{}).value || '', project: ($('#fproject')||{}).value || '',
-        assignee: ($('#fassignee')||{}).value || '', stage: ($('#fstage')||{}).value || '',
-        due: ($('#fdue')||{}).value || ''
-      };
+      // Desktop reads the inline filter bar; mobile keeps S.filters (set via the
+      // Filters sheet) since those inputs aren't present.
+      if ($('#fq')) {
+        S.filters = {
+          q: ($('#fq')||{}).value || '', project: ($('#fproject')||{}).value || '',
+          assignee: ($('#fassignee')||{}).value || '', stage: ($('#fstage')||{}).value || '',
+          due: ($('#fdue')||{}).value || ''
+        };
+      }
       // Only the table re-renders here, so fetch just the rows (not widgets/stats).
       call('getDashboardTasks', S.filters).then(function (d) { renderTaskRows(d.tasks); }).catch(errToast);
     },
@@ -1135,6 +1314,13 @@
 
     /* projects */
     newProject: function () {
+      if (isMobile()) {
+        return openSheet('<div class="m-sheet-h"><span class="t">New project</span></div>' +
+          '<div class="lbl">Name</div><input id="pName" class="m-fsel">' +
+          '<div class="lbl">Description</div><textarea id="pDesc" class="m-fsel" style="min-height:84px"></textarea>' +
+          '<div class="lbl">Status</div><select id="pStatus" class="m-fsel">' + S.boot.meta.projectStatus.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select>' +
+          '<div class="m-sticky-btn"><button class="m-cont" style="background:var(--m-gold);color:#3a2a10" onclick="App.createProjectM()">Create project</button></div>');
+      }
       modal('New project',
         '<label class="fld"><span>Name</span><input id="pName"></label>' +
         '<label class="fld"><span>Description</span><textarea id="pDesc"></textarea></label>' +
@@ -1181,12 +1367,13 @@
     },
 
     /* tasks */
-    newTask: function (projectId) { taskForm('Create task', null, projectId); },
-    newSubtask: function (parentId) { taskForm('Add subtask', parentId, null); },
+    newTask: function (projectId) { if (isMobile()) return mNewTask(projectId, null); taskForm('Create task', null, projectId); },
+    newSubtask: function (parentId) { if (isMobile()) return mNewTask(null, parentId); taskForm('Add subtask', parentId, null); },
     quickAssignee: function (id, val) { call('reassignTask', id, val).then(function (t) { toast('Assignee updated'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
     quickField: function (id, field, val) { var patch = {}; patch[field] = val; call('updateTaskDefinition', id, patch).then(function (t) { toast('Saved'); patchDashRow(t); }).catch(function (e) { errToast(e); }); },
     quickStage: function (id, val) { if (!val) return; call('setStageQuick', id, val).then(function () { toast('Status updated'); refreshCurrentList(); refreshBell(); }).catch(function (e) { errToast(e); refreshCurrentList(); }); },
     globalNewTask: function () {
+      if (isMobile()) return mNewTask(null, null);
       call('listProjects').then(function (ps) {
         var allowed = ps.filter(canCreateTaskInProject);
         if (!allowed.length) { toast('No project you can add tasks to.', true); return; }
@@ -1204,6 +1391,20 @@
             return call('createTask', pid, fields).then(function () { App.closeModal(); toast('Task created'); S.projectId = pid; openProject(pid); });
           });
       }).catch(errToast);
+    },
+    createTaskM: function (parentId) {
+      var fields = {
+        title: ($('#ntTitle') || {}).value || '', description: ($('#ntDesc') || {}).value || '',
+        priority: ($('#ntPriority') || {}).value || '', due_date: ($('#ntDue') || {}).value || '',
+        assignee_email: ($('#ntAssignee') || {}).value || ''
+      };
+      if (!fields.title.trim()) return toast('Title required', true);
+      var promise = parentId ? call('createSubtask', parentId, fields) : call('createTask', ($('#ntProject') || {}).value, fields);
+      promise.then(function () { toast('Task created'); refreshBell(); if (parentId) openTask(parentId); else navigate(S._prevView || 'dashboard'); }).catch(errToast);
+    },
+    createProjectM: function () {
+      var name = ($('#pName') || {}).value.trim(); if (!name) return toast('Name required', true);
+      call('createProject', name, ($('#pDesc') || {}).value, ($('#pStatus') || {}).value).then(function () { toast('Project created'); closeSheet(); navigate('projects'); }).catch(errToast);
     },
     saveDef: function (id, withAssignee) {
       var patch = { title: $('#edTitle').value, description: $('#edDesc').value,
@@ -1437,6 +1638,29 @@
     $('#confirmOk').onclick = function () { App.closeConfirm(); onConfirm(); };
   }
 
+  /* Mobile full-screen New task / Add subtask form (design 09). */
+  function mNewTask(projectId, parentId) {
+    S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view;
+    mAppbar({ title: parentId ? 'Add subtask' : 'New task', back: 'App.navBackHome()', plain: true });
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('listProjects').then(function (ps) {
+      var allowed = ps.filter(canCreateTaskInProject);
+      if (!parentId && !allowed.length) { $('#main').innerHTML = '<div class="m-empty">No project you can add tasks to.</div>'; return; }
+      var assignees = assignableFor(S.boot.user, S.boot.roster);
+      var projSel = parentId ? '' :
+        '<div class="lbl">Project</div><select id="ntProject" class="m-fsel">' + allowed.map(function (p) { return '<option value="' + h(p.id) + '"' + (projectId === p.id ? ' selected' : '') + '>' + h(p.name) + '</option>'; }).join('') + '</select>';
+      $('#main').innerHTML = '<div class="m-form">' +
+        projSel +
+        '<div class="lbl">Title</div><input id="ntTitle" placeholder="e.g. Prepare GA drawings">' +
+        '<div class="lbl">Description</div><textarea id="ntDesc" placeholder="Optional…"></textarea>' +
+        '<div class="row2"><div><div class="lbl">Priority</div><select id="ntPriority" class="m-fsel"><option value="">— No priority —</option>' + S.boot.meta.priorities.map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>' +
+          '<div><div class="lbl">Due date</div><input id="ntDue" type="date" class="m-fsel"></div></div>' +
+        '<div class="lbl">Assignee</div><select id="ntAssignee" class="m-fsel"><option value="">— Unassigned —</option>' + assignees.map(function (u) { return '<option value="' + h(u.email) + '">' + h(u.name) + '</option>'; }).join('') + '</select>' +
+        '</div>' +
+        '<button class="submit" onclick="App.createTaskM(\'' + (parentId || '') + '\')">' + (parentId ? 'Add subtask' : 'Create task') + '</button>';
+    }).catch(errToast);
+  }
+
   function taskForm(title, parentId, projectId) {
     var u = S.boot.user;
     var assignable = assignableFor(u, S.boot.roster);
@@ -1546,8 +1770,32 @@
       }).join('') + '</tbody></table></div>';
   }
 
+  /* Mobile Team & access — member cards + Add member (design 10). */
+  function renderTeamMobile(us) {
+    S._team = us;
+    var add = '<button class="m-addmember" onclick="App.addMemberSheet()"><span style="font-size:22px;line-height:1">+</span> Add team member</button>';
+    var cards = us.map(function (u) {
+      return '<div class="m-card"><div class="m-member">' +
+        '<div class="av">' + h(initials(u.name)) + '</div>' +
+        '<div class="mid"><div class="nm">' + h(u.name) + '</div><div class="em">' + h(u.email) + '</div>' +
+          '<div class="rowb"><span class="badge" style="background:var(--m-gold);color:#3a2a10">' + h(u.level) + '</span>' +
+          (u.phone ? '<span class="ph">' + h(u.phone) + '</span>' : '') +
+          (u.active ? '<span class="badge" style="background:#e6f3e9;color:#2f7a40">Active</span>' : '<span class="badge stage-todo">Inactive</span>') +
+          '</div></div>' +
+        '<button aria-label="Member menu" style="border:none;background:none;color:var(--muted);font-size:22px;padding:0 4px;align-self:flex-start" onclick="App.memberMenu(\'' + h(u.email) + '\')">⋮</button>' +
+      '</div></div>';
+    }).join('');
+    $('#main').innerHTML = add + '<div class="m-list">' + cards + '</div>';
+  }
+
   function renderAdmin() {
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    if (isMobile()) {
+      S.view = 'admin';
+      mAppbar({ title: 'Team & access', navKey: 'more' });
+      call('listUsersAdmin').then(function (us) { renderTeamMobile(us); }).catch(errToast);
+      return;
+    }
     Promise.all([call('listUsersAdmin'), call('getWhatsAppConfig'), call('getEmailConfig')]).then(function (res) {
       var us  = res[0];
       var wac = res[1];
