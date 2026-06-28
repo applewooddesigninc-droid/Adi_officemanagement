@@ -186,15 +186,19 @@
   /* Hide the whole mobile chrome on desktop; JS toggles via html.mob */
   .m-appbar,.bottom-nav,.fab{display:none}
 
-  /* ---- App bar (brown gradient header) ---- */
+  /* ---- App bar (brown gradient header) ----
+     Top-level screens: tall header with a large title at the bottom-left + actions
+     at the right (design 02/04/05/10). Sub-pages add .center → compact, back +
+     centered title (design 06/07/09/11/12). */
   .m-appbar{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,var(--m-pri),var(--m-pri-d));
-    color:#fff;padding:0 14px;min-height:64px;align-items:center;gap:10px}
-  .m-appbar .m-back{width:40px;height:40px;border:none;background:none;color:#fff;font-size:26px;
+    color:#fff;padding:0 16px 16px;min-height:92px;align-items:flex-end;gap:10px}
+  .m-appbar .m-back{width:40px;height:40px;border:none;background:none;color:#fff;font-size:28px;
     display:flex;align-items:center;justify-content:center;margin-left:-8px;-webkit-tap-highlight-color:transparent;flex-shrink:0}
-  .m-appbar .m-title{font-size:21px;font-weight:800;letter-spacing:.2px;flex:1;min-width:0;
+  .m-appbar .m-title{font-size:28px;font-weight:800;letter-spacing:.2px;flex:1;min-width:0;line-height:1.1;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .m-appbar.center .m-title{text-align:center;font-size:19px}
-  .m-appbar .m-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .m-appbar.center{align-items:center;min-height:60px;padding:0 10px}
+  .m-appbar.center .m-title{text-align:center;font-size:20px}
+  .m-appbar .m-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-bottom:3px}
   .m-appbar .m-bell{position:relative;width:44px;height:44px;border:none;background:none;color:#fff;
     display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
   .m-appbar .m-bell svg{width:24px;height:24px}
@@ -253,12 +257,12 @@
 
   /* ---- Stat tiles (2-col grid of 6 KPIs) ---- */
   .m-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px}
-  .m-stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
-    box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .m-stat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;min-height:104px;
+    display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent}
   .m-stat:active{background:#fdf7ef}
-  .m-stat .n{font-size:24px;font-weight:800;color:var(--m-pri);line-height:1.1}
+  .m-stat .n{font-size:34px;font-weight:800;color:var(--m-pri);line-height:1}
   .m-stat.alert .n{color:var(--danger)}
-  .m-stat .l{font-size:13px;color:var(--muted);margin-top:3px}
+  .m-stat .l{font-size:14px;color:var(--muted);margin-top:6px}
 
   /* ---- Workflow distribution ---- */
   .m-workflow .bar{display:flex;height:14px;border-radius:999px;overflow:hidden;margin:4px 0 10px}
@@ -372,6 +376,9 @@
   .m-statusopts{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 4px}
   .m-statusopt{padding:11px 16px;border-radius:999px;font-size:15px;font-weight:800;border:none;-webkit-tap-highlight-color:transparent}
   .m-fsel{width:100%;min-height:50px;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:16px;background:#fff;margin-bottom:2px}
+  select.m-fsel{appearance:none;-webkit-appearance:none;padding-right:40px;
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" stroke="%238A7B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5l6 6-6 6"/></svg>');
+    background-repeat:no-repeat;background-position:right 12px center}
   .m-cont{width:100%;min-height:52px;border:none;border-radius:13px;font-size:16px;font-weight:800;-webkit-tap-highlight-color:transparent}
 
   /* ---- Form (New task etc.) ---- */

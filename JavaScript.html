@@ -651,7 +651,8 @@
     opts = opts || {};
     var sub = (t._depth || 0) > 0;
     var proj = t.project_name || t.project_id || '';
-    var due = t.due_date ? '<span class="due' + (t.overdue ? ' over' : '') + '">' + (opts.statusCtl ? 'Due ' : '') + fmtDate(t.due_date) + '</span>' : '';
+    var showDue = opts.statusCtl || opts.showDue; // dashboard cards omit the date (design 02)
+    var due = (showDue && t.due_date) ? '<span class="due' + (t.overdue ? ' over' : '') + '">' + (opts.statusCtl ? 'Due ' : '') + fmtDate(t.due_date) + '</span>' : '';
     var pills = opts.statusCtl
       ? '<div class="pills">' + priPill(t.priority) + due + '<span class="spacer"></span>' + mStatusBtn(t) + '</div>'
       : '<div class="pills"><span class="badge ' + stageClass(t.stage) + '">' + h(t.stage) + '</span>' + priPill(t.priority) + due + '</div>';
@@ -830,7 +831,7 @@
     }).join('') + '</div>';
     var list = byStage[active] || [];
     var body = list.length
-      ? list.map(function (t) { t._depth = t.parent_task_id ? 1 : 0; return mTaskCard(t); }).join('')
+      ? list.map(function (t) { t._depth = t.parent_task_id ? 1 : 0; return mTaskCard(t, { showDue: true }); }).join('')
       : '<div class="m-empty">No tasks in ' + h(active) + '.</div>';
     $('#main').innerHTML = tabs + '<div class="m-list">' + body + '</div>';
   }
