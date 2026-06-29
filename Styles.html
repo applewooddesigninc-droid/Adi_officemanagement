@@ -100,6 +100,27 @@
   .proj h3{font-size:16px}
   .proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 
+  /* Projects — year & category layout (desktop): 3 category columns per year,
+     each a 2-wide card grid → six cards across. Divider between years. */
+  .year-section{margin-bottom:22px}
+  .year-head{font-size:18px;font-weight:800;color:var(--brown-dark);margin:6px 0 14px}
+  .year-head span{font-weight:400;font-size:12px;color:var(--muted);margin-left:8px}
+  .year-divider{border:none;border-top:2px solid var(--line);margin:24px 0}
+  .cat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .cat-col{min-width:0}
+  .cat-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:0 0 12px;
+    padding-bottom:7px;border-bottom:2px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between}
+  .cat-h span{background:var(--line-soft);border-radius:999px;padding:1px 9px;font-size:11px;color:var(--muted)}
+  .cat-h.cat-residential{color:#2f7a40;border-bottom-color:#cfe6d4}
+  .cat-h.cat-commercial{color:#235c97;border-bottom-color:#cfe0f2}
+  .cat-h.cat-industrial{color:#a6611a;border-bottom-color:#f0dcc0}
+  .cat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cat-empty{grid-column:1/-1;color:var(--muted);font-size:12.5px;padding:6px 2px}
+  .projc{padding:13px;cursor:pointer;display:flex;flex-direction:column}
+  .projc:hover{border-color:var(--gold)}
+  .projc-name{font-weight:700;font-size:13.5px;line-height:1.35;color:var(--text);word-break:break-word}
+  @media(max-width:1024px){ .cat-grid{grid-template-columns:1fr} }
+
   /* Board */
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .col{background:#f7f1e7;border:1px solid var(--line);border-radius:var(--radius);padding:10px;min-height:120px}

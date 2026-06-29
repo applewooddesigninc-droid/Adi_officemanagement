@@ -74,7 +74,7 @@ function getBootstrap() {
     meta: {
       appName: CONFIG.APP_NAME, company: CONFIG.COMPANY,
       stages: CONFIG.STAGES, stage: CONFIG.STAGE, priorities: CONFIG.PRIORITIES,
-      projectStatus: CONFIG.PROJECT_STATUS, roleLabel: CONFIG.ROLE_LABEL,
+      projectStatus: CONFIG.PROJECT_STATUS, projectTypes: CONFIG.PROJECT_TYPES, roleLabel: CONFIG.ROLE_LABEL,
       stageWeight: CONFIG.STAGE_WEIGHT
     },
     roster: listUsers(),

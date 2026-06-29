@@ -54,7 +54,7 @@ var CONFIG = {
   // ---- Column headers per tab (order matters; Setup writes these) ----
   HEADERS: {
     Users:           ['email', 'name', 'level', 'active', 'created_at', 'phone'],
-    Projects:        ['id', 'name', 'description', 'status', 'owner_email', 'created_at', 'updated_at'],
+    Projects:        ['id', 'name', 'description', 'status', 'owner_email', 'created_at', 'updated_at', 'type', 'year'],
     Tasks:           ['id', 'project_id', 'parent_task_id', 'title', 'description', 'assignee_email',
                       'creator_email', 'priority', 'due_date', 'stage', 'created_at', 'updated_at'],
     ChecklistItems:  ['id', 'task_id', 'text', 'done', 'position', 'created_at'],
@@ -73,6 +73,9 @@ var CONFIG = {
 
   // ---- Project status ----
   PROJECT_STATUS: ['Active', 'On-hold', 'Completed'],
+
+  // ---- Project type (drives the year/category Projects layout) ----
+  PROJECT_TYPES: ['Residential', 'Commercial', 'Industrial'],
 
   // ---- Task workflow stages (fixed, in order) ----
   STAGES: ['To Do', 'In Progress', 'Review', 'Completed'],

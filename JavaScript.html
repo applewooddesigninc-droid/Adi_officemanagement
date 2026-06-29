@@ -550,7 +550,7 @@
           var barColor = pct >= 100 ? '#3f8f4f' : pct >= 60 ? '#2f6fb0' : pct >= 30 ? '#C1A051' : '#e57373';
           return '<div class="proj-row">' +
             '<div class="row" style="margin-bottom:3px">' +
-              '<span class="small grow" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" title="' + h(p.name) + '">' + h(p.name) + '</span>' +
+              '<span class="small grow" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" title="' + h(p.label || p.name) + '">' + h(p.label || p.name) + '</span>' +
               '<span class="small muted" style="margin-left:8px;flex-shrink:0">' + pct + '%</span>' +
             '</div>' +
             '<div class="prog" style="height:6px"><i style="width:' + pct + '%;background:' + barColor + '"></i></div>' +
@@ -611,7 +611,7 @@
     }
     var stageOpts = S.boot.meta.stages.map(function (s){return {value:s,txt:s};});
     var priOpts = S.boot.meta.priorities.map(function (p){return {value:p,txt:p};});
-    var projOpts = projects.map(function (p){return {id:p.id,txt:p.name};});
+    var projOpts = projects.map(function (p){return {id:p.id,txt:p.label||p.name};});
     var userOpts = roster.filter(function(u){return u.active;}).map(function (u){return {email:u.email,txt:u.name};});
     return '<div class="filters">' +
       '<input id="fq" placeholder="Search tasks…" value="' + h(S.filters.q || '') + '" oninput="App.debounceFilter()">' +
@@ -721,7 +721,7 @@
     if (isMobile()) mAppbar({ title: 'Projects' });
     var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
     call('listProjects').then(function (ps) {
-      ps.forEach(function (p) { _projCache[p.id] = p.name; });
+      ps.forEach(function (p) { _projCache[p.id] = p.label || p.name; });
       if (isMobile()) {
         main.innerHTML =
           (S.boot.canCreateProject ? '<button class="m-addmember" style="background:var(--m-gold);color:#3a2a10" onclick="App.newProject()"><span style="font-size:20px">+</span> New project</button>' : '') +
@@ -731,9 +731,55 @@
       main.innerHTML =
         '<div class="page-head"><h1>Projects</h1><div class="spacer"></div>' +
           (S.boot.canCreateProject ? '<button class="btn gold" onclick="App.newProject()">+ New project</button>' : '') + '</div>' +
-        (ps.length ? '<div class="proj-grid">' + ps.map(projCard).join('') + '</div>'
-                   : '<div class="card" style="padding:28px"><p class="muted center">No projects yet.</p></div>');
+        renderProjectsByYear(ps);
     }).catch(errToast);
+  }
+
+  /* Year & category Projects layout (desktop, design request).
+     Years descend top→bottom (divider between); within each year, three category
+     columns (Residential · Commercial · Industrial), each a 2-wide card grid. */
+  function renderProjectsByYear(ps) {
+    if (!ps.length) return '<div class="card" style="padding:28px"><p class="muted center">No projects yet.</p></div>';
+    var CATS = S.boot.meta.projectTypes || ['Residential', 'Commercial', 'Industrial'];
+    var categorized = ps.filter(function (p) { return CATS.indexOf(p.type) >= 0 && p.year; });
+    var uncat = ps.filter(function (p) { return !(CATS.indexOf(p.type) >= 0 && p.year); });
+    var years = {};
+    categorized.forEach(function (p) { (years[p.year] = years[p.year] || []).push(p); });
+    var yrs = Object.keys(years).sort(function (a, b) { return b.localeCompare(a); });
+    var html = yrs.map(function (yr, i) {
+      return (i > 0 ? '<hr class="year-divider">' : '') +
+        '<div class="year-section"><div class="year-head">' + h(yr) + '</div><div class="cat-row">' +
+        CATS.map(function (cat) {
+          var cards = years[yr].filter(function (p) { return p.type === cat; });
+          return '<div class="cat-col"><h3 class="cat-h cat-' + cat.toLowerCase() + '">' + h(cat) + '<span>' + cards.length + '</span></h3>' +
+            '<div class="cat-grid">' + (cards.length ? cards.map(projCardCompact).join('') : '<div class="cat-empty">No projects</div>') + '</div></div>';
+        }).join('') + '</div></div>';
+    }).join('');
+    if (uncat.length) {
+      html += (yrs.length ? '<hr class="year-divider">' : '') +
+        '<div class="year-section"><div class="year-head">Uncategorized <span>add a type &amp; year to file these</span></div>' +
+        '<div class="proj-grid">' + uncat.map(projCard).join('') + '</div></div>';
+    }
+    return html;
+  }
+  function projCardCompact(p) {
+    return '<div class="card projc" onclick="App.openProject(\'' + h(p.id) + '\')">' +
+      '<div class="projc-name">' + h(p.label || p.name) + '</div>' +
+      '<div style="margin:7px 0"><span class="badge status">' + h(p.status) + '</span></div>' +
+      '<div class="prog" style="height:6px"><i style="width:' + p.completion + '%"></i></div>' +
+      '<div class="small muted" style="margin-top:5px">' + p.completion + '% · ' + p.openCount + '/' + p.taskCount + ' open</div>' +
+      (canCreateTaskInProject(p) ? '<button class="btn gold sm" style="width:100%;margin-top:9px" onclick="event.stopPropagation();App.newTask(\'' + h(p.id) + '\')">+ Task</button>' : '') +
+    '</div>';
+  }
+  function projYearOptions(cur) {
+    var y = new Date().getFullYear(), def = cur || String(y), o = '';
+    for (var i = y + 1; i >= y - 10; i--) o += '<option' + (String(def) === String(i) ? ' selected' : '') + '>' + i + '</option>';
+    return o;
+  }
+  function projTypeOptions(cur) {
+    return (S.boot.meta.projectTypes || ['Residential', 'Commercial', 'Industrial']).map(function (t) {
+      return '<option' + (cur === t ? ' selected' : '') + '>' + h(t) + '</option>';
+    }).join('');
   }
   function projStatusPill(s) {
     var bg = s === 'Active' ? '#e6f3e9' : s === 'Completed' ? '#e7f0fa' : '#fff3e0';
@@ -744,7 +790,7 @@
   function mProjCard(p) {
     var canAdd = canCreateTaskInProject(p);
     return '<div class="m-card m-proj">' +
-      '<div class="top"><h3>' + h(p.name) + '</h3>' + projStatusPill(p.status) + '</div>' +
+      '<div class="top"><h3>' + h(p.label || p.name) + '</h3>' + projStatusPill(p.status) + '</div>' +
       '<div class="sub">Owner: ' + h(p.owner_name) + ' · ' + p.openCount + ' open / ' + p.taskCount + ' tasks</div>' +
       '<div class="bar"><i style="width:' + p.completion + '%"></i></div>' +
       '<div class="pct">' + p.completion + '% complete</div>' +
@@ -764,7 +810,7 @@
 
   function projCard(p) {
     return '<div class="card proj">' +
-      '<div class="row"><h3 class="grow">' + h(p.name) + '</h3>' +
+      '<div class="row"><h3 class="grow">' + h(p.label || p.name) + '</h3>' +
         '<span class="badge status">' + h(p.status) + '</span></div>' +
       '<div class="small muted">' + h(p.description || 'No description') + '</div>' +
       '<div class="small muted">Owner: ' + h(p.owner_name) + ' · ' + p.openCount + ' open / ' + p.taskCount + ' tasks</div>' +
@@ -789,7 +835,7 @@
       var addHint = (!canAddTask && S.boot.user.level === 'L2') ? '<span class="small muted" style="margin-left:8px">Only the owner (' + h(p.owner_name) + ') or a Director can add tasks here</span>' : '';
       main.innerHTML =
         '<div class="page-head"><button class="btn ghost sm" onclick="App.nav(\'projects\')">← Projects</button>' +
-          '<h1 style="margin-left:6px">' + h(p.name) + '</h1>' +
+          '<h1 style="margin-left:6px">' + h(p.label || p.name) + '</h1>' +
           '<span class="badge status">' + h(p.status) + '</span><div class="spacer"></div>' +
           (canEditProj(p) ? '<button class="btn ghost sm" onclick="App.editProject(\'' + h(id) + '\')">Edit</button>' : '') +
           (canAddTask ? '<button class="btn gold" onclick="App.newTask(\'' + h(id) + '\')">+ New task</button>' : addHint) +
@@ -822,7 +868,7 @@
   function renderBoardMobile() {
     var bd = S._boardData; if (!bd) return;
     var p = bd.p, tasks = bd.tasks, stages = S.boot.meta.stages;
-    mAppbar({ title: p.name, back: 'App.nav(\'projects\')', plain: true, navKey: 'projects' });
+    mAppbar({ title: p.label || p.name, back: 'App.nav(\'projects\')', plain: true, navKey: 'projects' });
     var byStage = {}; stages.forEach(function (s) { byStage[s] = []; });
     tasks.forEach(function (t) { (byStage[t.stage] = byStage[t.stage] || []).push(t); });
     var active = (S._boardStage && byStage[S._boardStage]) ? S._boardStage : stages[0];
@@ -1318,18 +1364,24 @@
       if (isMobile()) {
         return openSheet('<div class="m-sheet-h"><span class="t">New project</span></div>' +
           '<div class="lbl">Name</div><input id="pName" class="m-fsel">' +
+          '<div class="lbl">Project type</div><select id="pType" class="m-fsel">' + projTypeOptions('') + '</select>' +
+          '<div class="lbl">Project year</div><select id="pYear" class="m-fsel">' + projYearOptions('') + '</select>' +
           '<div class="lbl">Description</div><textarea id="pDesc" class="m-fsel" style="min-height:84px"></textarea>' +
           '<div class="lbl">Status</div><select id="pStatus" class="m-fsel">' + S.boot.meta.projectStatus.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select>' +
           '<div class="m-sticky-btn"><button class="m-cont" style="background:var(--m-gold);color:#3a2a10" onclick="App.createProjectM()">Create project</button></div>');
       }
       modal('New project',
         '<label class="fld"><span>Name</span><input id="pName"></label>' +
+        '<div class="row wrap">' +
+          '<label class="fld grow"><span>Project type</span><select id="pType">' + projTypeOptions('') + '</select></label>' +
+          '<label class="fld grow"><span>Project year</span><select id="pYear">' + projYearOptions('') + '</select></label>' +
+        '</div>' +
         '<label class="fld"><span>Description</span><textarea id="pDesc"></textarea></label>' +
         '<label class="fld"><span>Status</span><select id="pStatus">' +
           S.boot.meta.projectStatus.map(function(s){return '<option>'+s+'</option>';}).join('') + '</select></label>',
         'Create', function () {
           var name = $('#pName').value.trim(); if (!name) return toast('Name required', true);
-          return call('createProject', name, $('#pDesc').value, $('#pStatus').value).then(function () {
+          return call('createProject', name, $('#pDesc').value, $('#pStatus').value, $('#pType').value, $('#pYear').value).then(function () {
             App.closeModal(); toast('Project created'); navigate('projects');
           });
         });
@@ -1340,13 +1392,17 @@
         S._editProj = p; // stash for deleteProject confirmation
         modal('Edit project',
           '<label class="fld"><span>Name</span><input id="pName" value="' + h(p.name) + '"></label>' +
+          '<div class="row wrap">' +
+            '<label class="fld grow"><span>Project type</span><select id="pType">' + projTypeOptions(p.type || '') + '</select></label>' +
+            '<label class="fld grow"><span>Project year</span><select id="pYear">' + projYearOptions(p.year || '') + '</select></label>' +
+          '</div>' +
           '<label class="fld"><span>Description</span><textarea id="pDesc">' + h(p.description||'') + '</textarea></label>' +
           '<label class="fld"><span>Status</span><select id="pStatus">' +
             S.boot.meta.projectStatus.map(function(s){return '<option'+(s===p.status?' selected':'')+'>'+s+'</option>';}).join('') + '</select></label>' +
           '<button class="btn danger sm" style="margin-top:8px" onclick="App.deleteProject(\'' + h(id) + '\')">Delete project</button>',
           'Save', function () {
-            return call('updateProject', id, { name: $('#pName').value, description: $('#pDesc').value, status: $('#pStatus').value })
-              .then(function () { App.closeModal(); toast('Saved'); openProject(id); });
+            return call('updateProject', id, { name: $('#pName').value, description: $('#pDesc').value, status: $('#pStatus').value, type: $('#pType').value, year: $('#pYear').value })
+              .then(function () { App.closeModal(); toast('Saved'); navigate('projects'); });
           });
       });
     },
@@ -1379,7 +1435,7 @@
         var allowed = ps.filter(canCreateTaskInProject);
         if (!allowed.length) { toast('No project you can add tasks to.', true); return; }
         modal('New task',
-          '<label class="fld"><span>Project</span><select id="gProject">' + allowed.map(function (p){return '<option value="'+h(p.id)+'">'+h(p.name)+'</option>';}).join('') + '</select></label>' +
+          '<label class="fld"><span>Project</span><select id="gProject">' + allowed.map(function (p){return '<option value="'+h(p.id)+'">'+h(p.label||p.name)+'</option>';}).join('') + '</select></label>' +
           '<label class="fld"><span>Title</span><input id="tTitleNew"></label>' +
           '<label class="fld"><span>Description</span><textarea id="tDesc"></textarea></label>' +
           '<div class="row wrap"><label class="fld grow"><span>Priority</span><select id="tPriority">' + priorityOptionsHtml('') + '</select></label>' +
@@ -1405,7 +1461,8 @@
     },
     createProjectM: function () {
       var name = ($('#pName') || {}).value.trim(); if (!name) return toast('Name required', true);
-      call('createProject', name, ($('#pDesc') || {}).value, ($('#pStatus') || {}).value).then(function () { toast('Project created'); closeSheet(); navigate('projects'); }).catch(errToast);
+      call('createProject', name, ($('#pDesc') || {}).value, ($('#pStatus') || {}).value, ($('#pType') || {}).value, ($('#pYear') || {}).value)
+        .then(function () { toast('Project created'); closeSheet(); navigate('projects'); }).catch(errToast);
     },
     saveDef: function (id, withAssignee) {
       var patch = { title: $('#edTitle').value, description: $('#edDesc').value,
@@ -1649,7 +1706,7 @@
       if (!parentId && !allowed.length) { $('#main').innerHTML = '<div class="m-empty">No project you can add tasks to.</div>'; return; }
       var assignees = assignableFor(S.boot.user, S.boot.roster);
       var projSel = parentId ? '' :
-        '<div class="lbl">Project</div><select id="ntProject" class="m-fsel">' + allowed.map(function (p) { return '<option value="' + h(p.id) + '"' + (projectId === p.id ? ' selected' : '') + '>' + h(p.name) + '</option>'; }).join('') + '</select>';
+        '<div class="lbl">Project</div><select id="ntProject" class="m-fsel">' + allowed.map(function (p) { return '<option value="' + h(p.id) + '"' + (projectId === p.id ? ' selected' : '') + '>' + h(p.label || p.name) + '</option>'; }).join('') + '</select>';
       $('#main').innerHTML = '<div class="m-form">' +
         projSel +
         '<div class="lbl">Title</div><input id="ntTitle" placeholder="e.g. Prepare GA drawings">' +

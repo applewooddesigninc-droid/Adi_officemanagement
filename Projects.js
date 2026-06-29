@@ -8,6 +8,30 @@ function getProject(id) {
   return Db.findBy(CONFIG.TAB.PROJECTS, 'id', id);
 }
 
+/** Display label for a project: "Name | Type | Year" (omits missing parts). */
+function projectLabel_(p) {
+  if (!p) return '';
+  var bits = [];
+  if (p.type) bits.push(p.type);
+  if (p.year) bits.push(p.year);
+  return bits.length ? (p.name || '') + ' | ' + bits.join(' | ') : (p.name || '');
+}
+
+/** Coerce a year value to a 4-digit string, or '' if invalid. */
+function normalizeYear_(y) {
+  y = String(y == null ? '' : y).trim();
+  return /^\d{4}$/.test(y) ? y : '';
+}
+
+/** Lazily add the type/year columns to the Projects sheet (safe to re-run). */
+function ensureProjectColumns_() {
+  var sh = Db.sheet(CONFIG.TAB.PROJECTS);
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  ['type', 'year'].forEach(function (col) {
+    if (headers.indexOf(col) < 0) { sh.getRange(1, sh.getLastColumn() + 1).setValue(col); headers.push(col); }
+  });
+}
+
 /** Stage-weighted completion for a set of task rows → integer percent. */
 function completionOf_(taskRows) {
   if (!taskRows.length) return 0;
@@ -31,6 +55,9 @@ function listProjects() {
       name: p.name,
       description: p.description,
       status: p.status,
+      type: p.type || '',
+      year: p.year ? String(p.year) : '',
+      label: projectLabel_(p),
       owner_email: lc(p.owner_email),
       owner_name: (users[lc(p.owner_email)] || {}).name || p.owner_email,
       completion: completionOf_(tasks),
@@ -42,15 +69,19 @@ function listProjects() {
   });
 }
 
-function createProject(name, description, status) {
+function createProject(name, description, status, type, year) {
   var me = requireUser();
   if (!canCreateProject(me)) throw new Error('Only Directors and Project Leads can create projects.');
   if (!name || !String(name).trim()) throw new Error('Project name is required.');
   status = CONFIG.PROJECT_STATUS.indexOf(status) >= 0 ? status : 'Active';
+  type = CONFIG.PROJECT_TYPES.indexOf(type) >= 0 ? type : '';
+  year = normalizeYear_(year);
+  ensureProjectColumns_();
   var id = genId('P');
   Db.insert(CONFIG.TAB.PROJECTS, {
     id: id, name: String(name).trim(), description: description || '',
-    status: status, owner_email: me.email, created_at: nowIso(), updated_at: nowIso()
+    status: status, owner_email: me.email, created_at: nowIso(), updated_at: nowIso(),
+    type: type, year: year
   });
   ensureProjectFolder_(id, name); // create the Drive attachments subfolder up front
   logActivity(me.email, 'project.create', 'project', id, name);
@@ -68,7 +99,10 @@ function updateProject(id, patch) {
     if (CONFIG.PROJECT_STATUS.indexOf(patch.status) < 0) throw new Error('Invalid status.');
     clean.status = patch.status;
   }
+  if (patch.type !== undefined) clean.type = CONFIG.PROJECT_TYPES.indexOf(patch.type) >= 0 ? patch.type : '';
+  if (patch.year !== undefined) clean.year = normalizeYear_(patch.year);
   clean.updated_at = nowIso();
+  if (clean.type !== undefined || clean.year !== undefined) ensureProjectColumns_();
   Db.update(CONFIG.TAB.PROJECTS, 'id', id, clean);
   logActivity(me.email, 'project.update', 'project', id, JSON.stringify(clean));
   return getProject(id);

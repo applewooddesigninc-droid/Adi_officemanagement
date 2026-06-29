@@ -94,7 +94,7 @@ function shapeTask_(t, users, me, childrenOf) {
   var s = {
     id: t.id,
     project_id: t.project_id,
-    project_name: (getProject(t.project_id) || {}).name || t.project_id,
+    project_name: projectLabel_(getProject(t.project_id)) || t.project_id,
     parent_task_id: t.parent_task_id || '',
     title: t.title,
     description: t.description,
