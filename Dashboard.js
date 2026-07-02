@@ -32,8 +32,11 @@ function getDashboard(filters) {
   var filtered = applyFiltersWithAncestors_(allVisible, filters)
     .map(function (t) { return shapeTask_(t, users, me, childrenOf); });
 
-  var avg = projects.length
-    ? Math.round(projects.reduce(function (s, p) { return s + p.completion; }, 0) / projects.length) : 0;
+  // On-hold projects are excluded from active project calculations (Req #10);
+  // their tasks and history are untouched and they still appear on the Projects page.
+  var activeProjects = projects.filter(function (p) { return p.status !== 'On-hold'; });
+  var avg = activeProjects.length
+    ? Math.round(activeProjects.reduce(function (s, p) { return s + p.completion; }, 0) / activeProjects.length) : 0;
 
   var projectMap = {};
   projects.forEach(function (p) { projectMap[p.id] = p; });
@@ -93,7 +96,7 @@ function getDashboard(filters) {
 
   return {
     stats: {
-      projects: projects.length,
+      projects: activeProjects.length,
       openTasks: open.length,
       myPending: myPending.length,
       myOverdue: myOverdue.length,

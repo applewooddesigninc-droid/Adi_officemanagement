@@ -104,6 +104,7 @@ function shapeTask_(t, users, me, childrenOf) {
     creator_name: nameOf_(t.creator_email, users),
     priority: t.priority || '',
     due_date: t.due_date,
+    est_hours: (t.est_hours === '' || t.est_hours == null) ? '' : Number(t.est_hours),
     stage: t.stage,
     weight: CONFIG.STAGE_WEIGHT[t.stage] || 0,
     overdue: isOverdue_(t),
@@ -292,6 +293,22 @@ function createSubtask(parentId, fields) {
   return insertTask_(me, getProject(parent.project_id), parentId, fields);
 }
 
+/** Coerce estimated-hours input to a non-negative number, or '' when blank. */
+function normalizeHours_(v) {
+  if (v === '' || v == null) return '';
+  var n = Number(v);
+  return (isFinite(n) && n >= 0) ? n : '';
+}
+
+/** Lazily add the workload/timer columns to the Tasks sheet (safe to re-run). */
+function ensureTaskColumns_() {
+  var sh = Db.sheet(CONFIG.TAB.TASKS);
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  ['est_hours', 'actual_min', 'ip_since'].forEach(function (col) {
+    if (headers.indexOf(col) < 0) { sh.getRange(1, sh.getLastColumn() + 1).setValue(col); headers.push(col); }
+  });
+}
+
 function insertTask_(me, project, parentId, fields) {
   fields = fields || {};
   var title = String(fields.title || '').trim();
@@ -302,13 +319,16 @@ function insertTask_(me, project, parentId, fields) {
   }
   var priority = CONFIG.PRIORITIES.indexOf(fields.priority) >= 0 ? fields.priority : ''; // optional
   var due = fields.due_date ? String(fields.due_date) : '';        // optional
+  var est = normalizeHours_(fields.est_hours);                     // optional estimated effort
+  ensureTaskColumns_();
   var id = genId('T');
   Db.insert(CONFIG.TAB.TASKS, {
     id: id, project_id: project.id, parent_task_id: parentId || '',
     title: title, description: fields.description || '',
     assignee_email: assignee, creator_email: me.email,
     priority: priority, due_date: due, stage: CONFIG.STAGE.TODO,
-    created_at: nowIso(), updated_at: nowIso()
+    created_at: nowIso(), updated_at: nowIso(),
+    est_hours: est, actual_min: '', ip_since: ''
   });
   logActivity(me.email, parentId ? 'subtask.create' : 'task.create', 'task', id, title);
   if (assignee && assignee !== me.email) {
@@ -340,8 +360,12 @@ function updateTaskDefinition(id, patch) {
     clean.priority = patch.priority;
   }
   if (patch.due_date !== undefined) clean.due_date = patch.due_date ? String(patch.due_date) : '';
+  if (patch.est_hours !== undefined) { clean.est_hours = normalizeHours_(patch.est_hours); ensureTaskColumns_(); }
   clean.updated_at = nowIso();
   Db.update(CONFIG.TAB.TASKS, 'id', id, clean);
+  if (patch.est_hours !== undefined && String(clean.est_hours) !== String(t.est_hours == null ? '' : t.est_hours)) {
+    logActivity(me.email, 'task.update', 'task', id, 'estimated hours → ' + (clean.est_hours === '' ? 'none' : clean.est_hours + 'h'));
+  }
   // Log a separate history event for each tracked field that actually changed.
   if (patch.priority !== undefined && patch.priority !== (t.priority || '')) {
     logActivity(me.email, 'task.priority', 'task', id,

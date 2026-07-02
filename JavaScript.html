@@ -971,6 +971,7 @@
         '<div class="m-kv"><span class="k">Assignee</span><span class="v">' + h(d.assignee_name || 'Unassigned') + '</span></div>' +
         '<div class="m-kv"><span class="k">Priority</span><span class="v">' + h(d.priority || '—') + '</span></div>' +
         '<div class="m-kv"><span class="k">Due date</span><span class="v">' + (d.due_date ? h(fmtDate(d.due_date)) : '—') + '</span></div>' +
+        '<div class="m-kv"><span class="k">Estimate</span><span class="v">' + (d.est_hours === '' || d.est_hours == null ? '—' : h(d.est_hours) + ' h') + '</span></div>' +
         '<div class="m-kv"><span class="k">Created by</span><span class="v">' + h(d.creator_name) + '</span></div>' +
       '</div>' +
       '<div class="m-card" style="margin-bottom:12px"><div class="m-cardh"><span class="t">Checklist</span><span class="c">' + doneCt + ' / ' + d.checklist.length + '</span></div>' +
@@ -1023,7 +1024,7 @@
         '</div>' +
         '<div class="body">' +
           (stageActions.length ? '<div class="row wrap" style="margin-bottom:12px">' + stageActions.join('') + '</div>' : '') +
-          '<div class="small muted">Assignee: <b>' + (d.assignee_name ? h(d.assignee_name) : 'Unassigned') + '</b> · Created by ' + h(d.creator_name) + ' · Due ' + (d.due_date ? fmtDate(d.due_date) : '—') + '</div>' +
+          '<div class="small muted">Assignee: <b>' + (d.assignee_name ? h(d.assignee_name) : 'Unassigned') + '</b> · Created by ' + h(d.creator_name) + ' · Due ' + (d.due_date ? fmtDate(d.due_date) : '—') + (d.est_hours === '' || d.est_hours == null ? '' : ' · Est ' + h(d.est_hours) + 'h') + '</div>' +
           '<p style="white-space:pre-wrap;margin-top:10px">' + h(d.description || '') + '</p>' +
 
           (p.editDefinition ? defEditor(d, assignOpts, p) : '') +
@@ -1068,6 +1069,7 @@
       '<div class="row wrap">' +
         '<label class="fld grow"><span>Priority</span><select id="edPriority">' + priorityOptionsHtml(d.priority) + '</select></label>' +
         '<label class="fld grow"><span>Due date</span><input type="date" id="edDue" value="' + h(fmtDate(d.due_date)) + '"></label>' +
+        '<label class="fld grow"><span>Est. hours</span><input type="number" id="edEst" min="0" step="0.5" value="' + (d.est_hours === '' || d.est_hours == null ? '' : h(d.est_hours)) + '" placeholder="e.g. 4"></label>' +
         (p.reassign && assignOpts ? '<label class="fld grow"><span>Assignee</span><select id="edAssignee">' + assignOpts + '</select></label>' : '') +
       '</div>' +
       '<button class="btn sm" onclick="App.saveDef(\'' + h(d.id) + '\',' + (p.reassign && assignOpts ? 'true' : 'false') + ')">Save details</button>' +
@@ -1439,11 +1441,12 @@
           '<label class="fld"><span>Title</span><input id="tTitleNew"></label>' +
           '<label class="fld"><span>Description</span><textarea id="tDesc"></textarea></label>' +
           '<div class="row wrap"><label class="fld grow"><span>Priority</span><select id="tPriority">' + priorityOptionsHtml('') + '</select></label>' +
-          '<label class="fld grow"><span>Due date</span><input type="date" id="tDue"></label></div>' +
+          '<label class="fld grow"><span>Due date</span><input type="date" id="tDue"></label>' +
+          '<label class="fld grow"><span>Est. hours</span><input type="number" id="tEst" min="0" step="0.5" placeholder="e.g. 4"></label></div>' +
           '<label class="fld"><span>Assignee</span><select id="tAssignee">' + assigneeOptionsHtml('') + '</select></label>',
           'Create', function () {
             var pid = $('#gProject').value;
-            var fields = { title: $('#tTitleNew').value, description: $('#tDesc').value, priority: $('#tPriority').value, due_date: $('#tDue').value, assignee_email: $('#tAssignee').value };
+            var fields = { title: $('#tTitleNew').value, description: $('#tDesc').value, priority: $('#tPriority').value, due_date: $('#tDue').value, assignee_email: $('#tAssignee').value, est_hours: ($('#tEst')||{}).value || '' };
             if (!fields.title.trim()) { toast('Title required', true); return; }
             return call('createTask', pid, fields).then(function () { App.closeModal(); toast('Task created'); S.projectId = pid; openProject(pid); });
           });
@@ -1453,7 +1456,7 @@
       var fields = {
         title: ($('#ntTitle') || {}).value || '', description: ($('#ntDesc') || {}).value || '',
         priority: ($('#ntPriority') || {}).value || '', due_date: ($('#ntDue') || {}).value || '',
-        assignee_email: ($('#ntAssignee') || {}).value || ''
+        assignee_email: ($('#ntAssignee') || {}).value || '', est_hours: ($('#ntEst') || {}).value || ''
       };
       if (!fields.title.trim()) return toast('Title required', true);
       var promise = parentId ? call('createSubtask', parentId, fields) : call('createTask', ($('#ntProject') || {}).value, fields);
@@ -1466,7 +1469,8 @@
     },
     saveDef: function (id, withAssignee) {
       var patch = { title: $('#edTitle').value, description: $('#edDesc').value,
-        priority: $('#edPriority').value, due_date: $('#edDue').value };
+        priority: $('#edPriority').value, due_date: $('#edDue').value,
+        est_hours: ($('#edEst') || {}).value || '' };
       var chain = call('updateTaskDefinition', id, patch);
       if (withAssignee && $('#edAssignee')) {
         var na = $('#edAssignee').value;
@@ -1713,6 +1717,7 @@
         '<div class="lbl">Description</div><textarea id="ntDesc" placeholder="Optional…"></textarea>' +
         '<div class="row2"><div><div class="lbl">Priority</div><select id="ntPriority" class="m-fsel"><option value="">— No priority —</option>' + S.boot.meta.priorities.map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>' +
           '<div><div class="lbl">Due date</div><input id="ntDue" type="date" class="m-fsel"></div></div>' +
+        '<div class="lbl">Estimated hours</div><input id="ntEst" type="number" min="0" step="0.5" class="m-fsel" placeholder="e.g. 4 (optional)">' +
         '<div class="lbl">Assignee</div><select id="ntAssignee" class="m-fsel"><option value="">— Unassigned —</option>' + assignees.map(function (u) { return '<option value="' + h(u.email) + '">' + h(u.name) + '</option>'; }).join('') + '</select>' +
         '</div>' +
         '<button class="submit" onclick="App.createTaskM(\'' + (parentId || '') + '\')">' + (parentId ? 'Add subtask' : 'Create task') + '</button>';
@@ -1729,11 +1734,12 @@
       '<div class="row wrap">' +
         '<label class="fld grow"><span>Priority</span><select id="tPriority">' + priorityOptionsHtml('') + '</select></label>' +
         '<label class="fld grow"><span>Due date</span><input type="date" id="tDue"></label>' +
+        '<label class="fld grow"><span>Est. hours</span><input type="number" id="tEst" min="0" step="0.5" placeholder="e.g. 4"></label>' +
       '</div>' + assignField,
       'Create', function () {
         var fields = { title: $('#tTitleNew').value, description: $('#tDesc').value,
           priority: $('#tPriority').value, due_date: $('#tDue').value,
-          assignee_email: ($('#tAssignee')||{}).value };
+          assignee_email: ($('#tAssignee')||{}).value, est_hours: ($('#tEst')||{}).value || '' };
         if (!fields.title.trim()) { toast('Title required', true); return; }
         var promise = parentId ? call('createSubtask', parentId, fields) : call('createTask', projectId, fields);
         return promise.then(function () {
