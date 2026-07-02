@@ -18,9 +18,30 @@ function listUsers() {
       level: u.level,
       label: CONFIG.ROLE_LABEL[u.level] || u.level,
       active: asBool(u.active),
+      on_leave: asBool(u.on_leave),
       created_at: u.created_at
     };
   });
+}
+
+/** Lazily add the on_leave column to the Users sheet (safe to re-run). */
+function ensureUsersLeaveColumn_() {
+  var sh = Db.sheet(CONFIG.TAB.USERS);
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (headers.indexOf('on_leave') < 0) sh.getRange(1, sh.getLastColumn() + 1).setValue('on_leave');
+}
+
+/** Mark an employee on leave / absent today (or back). Director only.
+ *  A simple manual flag: it stays until turned off. On-leave employees are
+ *  treated as 0 capacity today by the workload calc, and future date-range leave
+ *  plugs into WorkCal without changing callers. */
+function setUserLeave(email, onLeave) {
+  var me = requireUser();
+  if (!canManageUsers(me)) throw new Error('Director only.');
+  ensureUsersLeaveColumn_();
+  Db.update(CONFIG.TAB.USERS, 'email', lc(email), { on_leave: !!onLeave });
+  logActivity(me.email, 'user.leave', 'user', lc(email), onLeave ? 'on leave' : 'present');
+  return { email: lc(email), on_leave: !!onLeave };
 }
 
 /** Full roster including phone — Director only (used by admin panel). */
@@ -31,7 +52,7 @@ function listUsersAdmin() {
     return {
       email: lc(u.email), name: u.name || u.email, level: u.level,
       label: CONFIG.ROLE_LABEL[u.level] || u.level,
-      active: asBool(u.active), phone: u.phone || '', created_at: u.created_at
+      active: asBool(u.active), on_leave: asBool(u.on_leave), phone: u.phone || '', created_at: u.created_at
     };
   });
 }
@@ -61,6 +82,7 @@ function addUser(email, name, level, phone) {
   phone = String(phone || '').trim();
   validatePhone_(phone);
   ensureUsersPhoneColumn_(); // safe no-op if column already exists
+  ensureUsersLeaveColumn_();
   var existing = Db.findBy(CONFIG.TAB.USERS, 'email', email);
   if (existing) {
     var upd = { name: name || existing.name, level: level, active: true };
@@ -71,7 +93,7 @@ function addUser(email, name, level, phone) {
     return getUserByEmail(email);
   }
   Db.insert(CONFIG.TAB.USERS, {
-    email: email, name: name || email, level: level, active: true, created_at: nowIso(), phone: phone
+    email: email, name: name || email, level: level, active: true, created_at: nowIso(), phone: phone, on_leave: false
   });
   shareDataWith_(email);
   logActivity(me.email, 'user.add', 'user', email, level);

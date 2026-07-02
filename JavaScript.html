@@ -1189,12 +1189,14 @@
     memberMenu: function (email) {
       var u = (S._team || []).filter(function (x) { return x.email === email; })[0] || {};
       openSheet('<div class="m-sheet-h"><span class="t">' + h(u.name || email) + '</span></div><div class="m-optlist">' +
+        '<button class="m-opt" onclick="App.toggleLeave(\'' + h(email) + '\',' + (u.on_leave ? 'false' : 'true') + ')">' + (u.on_leave ? 'Mark present (back from leave)' : 'Mark on leave / absent today') + '</button>' +
         '<button class="m-opt" onclick="App.changeLevel(\'' + h(email) + '\')">Change level<span class="chev" style="color:var(--muted)">›</span></button>' +
         '<button class="m-opt" onclick="App.editPhone(\'' + h(email) + '\')">Edit mobile number<span class="chev" style="color:var(--muted)">›</span></button>' +
         (u.active ? '<button class="m-opt" style="color:var(--danger)" onclick="App.setActiveM(\'' + h(email) + '\',false)">Deactivate</button>'
                   : '<button class="m-opt" onclick="App.setActiveM(\'' + h(email) + '\',true)">Reactivate</button>') +
       '</div>');
     },
+    toggleLeave: function (email, on) { closeSheet(); call('setUserLeave', email, on).then(function () { toast(on ? 'Marked on leave' : 'Marked present'); renderAdmin(); }).catch(errToast); },
     changeLevel: function (email) {
       var u = (S._team || []).filter(function (x) { return x.email === email; })[0] || {};
       mOptions('Level', [{ v: 'L1', t: 'L1 · Director' }, { v: 'L2', t: 'L2 · Project Lead' }, { v: 'L3', t: 'L3 · Team Member' }, { v: 'L4', t: 'L4 · Junior Member' }], u.level,
@@ -1579,6 +1581,7 @@
     },
     setLevel: function (email, level) { call('updateUser', email, { level: level }).then(function(){ toast('Updated'); renderAdmin(); }).catch(errToast); },
     toggleActive: function (email, active) { call('updateUser', email, { active: active }).then(function(){ toast(active?'Activated':'Deactivated'); renderAdmin(); }).catch(errToast); },
+    setLeave: function (email, on) { call('setUserLeave', email, on).then(function(){ toast(on?'Marked on leave':'Marked present'); renderAdmin(); }).catch(errToast); },
     savePhone: function (email) {
       var inp = document.getElementById('ph_' + email); if (!inp) return;
       call('updateUserPhone', email, inp.value.trim()).then(function () { toast('Phone saved'); }).catch(errToast);
@@ -1826,10 +1829,14 @@
             '<input id="ph_' + h(u.email) + '" value="' + h(u.phone||'') + '" placeholder="+91…" style="width:130px;font-size:12px">' +
             '<button class="btn ghost sm" onclick="App.savePhone(\'' + h(u.email) + '\')">Save</button>' +
           '</div></td>' +
-          '<td>' + (u.active ? '<span class="badge stage-completed">Active</span>' : '<span class="badge stage-todo">Inactive</span>') + '</td>' +
-          '<td>' + (u.active
-            ? '<button class="btn danger sm" onclick="App.confirmDeactivate(\'' + h(u.email) + '\')">Deactivate</button>'
-            : '<button class="btn ghost sm" onclick="App.toggleActive(\'' + h(u.email) + '\',true)">Reactivate</button>') + '</td>' +
+          '<td>' + (u.active ? '<span class="badge stage-completed">Active</span>' : '<span class="badge stage-todo">Inactive</span>') +
+            (u.on_leave ? ' <span class="badge over">On leave</span>' : '') + '</td>' +
+          '<td><div class="row" style="gap:6px">' +
+            '<button class="btn ghost sm" onclick="App.setLeave(\'' + h(u.email) + '\',' + (u.on_leave ? 'false' : 'true') + ')">' + (u.on_leave ? 'Back' : 'On leave') + '</button>' +
+            (u.active
+              ? '<button class="btn danger sm" onclick="App.confirmDeactivate(\'' + h(u.email) + '\')">Deactivate</button>'
+              : '<button class="btn ghost sm" onclick="App.toggleActive(\'' + h(u.email) + '\',true)">Reactivate</button>') +
+          '</div></td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -1845,6 +1852,7 @@
           '<div class="rowb"><span class="badge" style="background:var(--m-gold);color:#3a2a10">' + h(u.level) + '</span>' +
           (u.phone ? '<span class="ph">' + h(u.phone) + '</span>' : '') +
           (u.active ? '<span class="badge" style="background:#e6f3e9;color:#2f7a40">Active</span>' : '<span class="badge stage-todo">Inactive</span>') +
+          (u.on_leave ? '<span class="badge" style="background:#fdeceb;color:#b3261e">On leave</span>' : '') +
           '</div></div>' +
         '<button aria-label="Member menu" style="border:none;background:none;color:var(--muted);font-size:22px;padding:0 4px;align-self:flex-start" onclick="App.memberMenu(\'' + h(u.email) + '\')">⋮</button>' +
       '</div></div>';

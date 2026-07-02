@@ -53,7 +53,7 @@ var CONFIG = {
 
   // ---- Column headers per tab (order matters; Setup writes these) ----
   HEADERS: {
-    Users:           ['email', 'name', 'level', 'active', 'created_at', 'phone'],
+    Users:           ['email', 'name', 'level', 'active', 'created_at', 'phone', 'on_leave'],
     Projects:        ['id', 'name', 'description', 'status', 'owner_email', 'created_at', 'updated_at', 'type', 'year'],
     Tasks:           ['id', 'project_id', 'parent_task_id', 'title', 'description', 'assignee_email',
                       'creator_email', 'priority', 'due_date', 'stage', 'created_at', 'updated_at',
