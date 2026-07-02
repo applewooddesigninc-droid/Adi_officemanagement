@@ -236,6 +236,7 @@
       { v: 'projects', ic: '▣', t: 'Projects' },
       { v: 'mytasks', ic: '✔', t: 'My Tasks' }
     ];
+    if (S.boot.canManageUsers) deskNav.push({ v: 'planning', ic: '◑', t: 'Planning' });
     if (S.boot.canManageUsers) deskNav.push({ v: 'admin', ic: '⚙', t: 'Team' });
     var mnav = [
       { v: 'dashboard', t: 'Home' }, { v: 'projects', t: 'Projects' },
@@ -247,7 +248,7 @@
       '<div class="topbar">' +
         '<div class="brand">ADI<span class="dot">&nbsp;Designs</span>' +
           '<small>' + h(S.boot.meta.appName) + '</small></div>' +
-          '<span class="ver-tag" title="UI build">m11</span>' +
+          '<span class="ver-tag" title="UI build">m12</span>' +
         '<div class="spacer"></div>' +
         (S.boot.canCreateProject ? '<button class="btn gold sm" style="margin-right:10px" onclick="App.globalNewTask()">+ New task</button>' : '') +
         '<button class="bell" onclick="App.toggleNotif(event)">🔔<span class="count bellCount hidden">0</span></button>' +
@@ -310,6 +311,7 @@
     if (view === 'dashboard') renderDashboard();
     else if (view === 'projects') renderProjects();
     else if (view === 'mytasks') renderMyTasks();
+    else if (view === 'planning') renderPlanning();
     else if (view === 'admin') renderAdmin();
   }
 
@@ -1296,6 +1298,7 @@
     /* More sheet (design: Team · Notification settings · Switch account) */
     openMore: function () {
       var rows = [];
+      if (S.boot.canManageUsers) rows.push(['Resource planning', 'App.navMore(\'planning\')']);
       if (S.boot.canManageUsers) rows.push(['Team &amp; access', 'App.navMore(\'admin\')']);
       rows.push(['Notification settings', 'App.navMore(\'settings\')']);
       rows.push(['Switch account', 'App.switchAcct()']);
@@ -1304,7 +1307,7 @@
         rows.map(function (r) { return '<button class="m-opt" onclick="' + r[1] + '">' + r[0] + '<span class="chev" style="color:var(--muted)">›</span></button>'; }).join('') + '</div>');
       [].forEach.call(document.querySelectorAll('#bottomNav a'), function (a) { a.classList.toggle('active', a.getAttribute('data-view') === 'more'); });
     },
-    navMore: function (view) { closeSheet(); S._prevView = (S.view === 'admin' || S.view === 'settings') ? 'dashboard' : S.view; if (view === 'admin') renderAdmin(); else renderSettings(); },
+    navMore: function (view) { closeSheet(); S._prevView = (['admin', 'settings', 'planning'].indexOf(S.view) >= 0) ? 'dashboard' : S.view; if (view === 'admin') renderAdmin(); else if (view === 'planning') renderPlanning(); else renderSettings(); },
     switchAcct: function () { closeSheet(); window.open(switchAccountUrl(), '_blank'); },
     openNotifs: function () { if (isMobile()) renderNotifsScreen(); else App.toggleNotif(); },
     navBackHome: function () { navigate(S._prevView || 'dashboard'); },
@@ -1582,6 +1585,7 @@
     setLevel: function (email, level) { call('updateUser', email, { level: level }).then(function(){ toast('Updated'); renderAdmin(); }).catch(errToast); },
     toggleActive: function (email, active) { call('updateUser', email, { active: active }).then(function(){ toast(active?'Activated':'Deactivated'); renderAdmin(); }).catch(errToast); },
     setLeave: function (email, on) { call('setUserLeave', email, on).then(function(){ toast(on?'Marked on leave':'Marked present'); renderAdmin(); }).catch(errToast); },
+    refreshPlanning: function () { renderPlanning(); },
     savePhone: function (email) {
       var inp = document.getElementById('ph_' + email); if (!inp) return;
       call('updateUserPhone', email, inp.value.trim()).then(function () { toast('Phone saved'); }).catch(errToast);
@@ -1839,6 +1843,48 @@
           '</div></td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
+  }
+
+  /* ---------- Resource planning (L1 only — Feature #4/#5) ---------- */
+  function renderPlanning() {
+    S.view = 'planning';
+    if (isMobile()) mAppbar({ title: 'Resource planning', back: 'App.navBackHome()', plain: true, navKey: 'more' });
+    var main = $('#main'); main.innerHTML = '<div class="spinner"></div>';
+    call('getResourcePlan').then(function (d) {
+      var head = isMobile()
+        ? '<div class="m-section-h"><span class="t">Team workload</span><button style="border:none;background:none;color:var(--m-pri);font-weight:700;font-size:14px" onclick="App.refreshPlanning()">↻ Refresh</button></div>'
+        : '<div class="page-head"><h1>Resource planning</h1><div class="spacer"></div><span class="small muted" style="margin-right:12px">as of ' + h(d.generatedAt) + '</span><button class="btn ghost" onclick="App.refreshPlanning()">↻ Refresh</button></div>';
+      var legend = '<div class="plan-legend"><span><i class="pl-dot" style="background:#3f8f4f"></i>Light</span><span><i class="pl-dot" style="background:#C1A051"></i>Moderate</span><span><i class="pl-dot" style="background:#d98324"></i>Heavy</span><span><i class="pl-dot" style="background:#b3261e"></i>Overloaded</span></div>';
+      main.innerHTML = head + legend +
+        (d.employees.length ? '<div class="plan-grid">' + d.employees.map(planningCard).join('') + '</div>' : '<div class="m-empty" style="padding:30px;text-align:center;color:var(--muted)">No active employees.</div>');
+    }).catch(errToast);
+  }
+  function planningCard(e) {
+    var BAND = { light: ['Light', '#3f8f4f'], moderate: ['Moderate', '#C1A051'], heavy: ['Heavy', '#d98324'], over: ['Overloaded', '#b3261e'] };
+    var b = BAND[e.band] || BAND.light;
+    var sFg = e.onLeave ? '#b3261e' : (e.status === 'Available' ? '#2f7a40' : '#a6611a');
+    var sBg = e.onLeave ? '#fdeceb' : (e.status === 'Available' ? '#e6f3e9' : '#fff3e0');
+    var m = function (label, val, alert) { return '<div class="pl-m"><div class="pl-mv"' + (alert ? ' style="color:var(--danger)"' : '') + '>' + val + '</div><div class="pl-ml">' + label + '</div></div>'; };
+    var proj = e.byProject.length
+      ? e.byProject.slice(0, 4).map(function (p) { return '<div class="pl-proj"><span>' + h(p.project) + '</span><b>' + p.hours + 'h</b></div>'; }).join('')
+      : '<div class="small muted">No estimated pending work.</div>';
+    return '<div class="card plan-card">' +
+      '<div class="pl-head">' +
+        '<span class="pl-av">' + h(initials(e.name)) + '</span>' +
+        '<span class="grow" style="min-width:0"><span class="pl-name">' + h(e.name) + '</span><span class="small muted" style="display:block">' + h(e.designation) + '</span></span>' +
+        '<span class="badge" style="background:' + sBg + ';color:' + sFg + '">' + h(e.status) + '</span>' +
+      '</div>' +
+      '<div class="pl-bar-row"><div class="pl-bar"><i style="width:' + Math.min(100, e.workloadPct) + '%;background:' + b[1] + '"></i></div>' +
+        '<span class="pl-pct" style="color:' + b[1] + '">' + e.workloadPct + '% · ' + b[0] + '</span></div>' +
+      '<div class="pl-metrics">' +
+        m('Pending', e.pendingHours + 'h') + m('Today', e.allocatedToday + 'h') + m('Free today', e.remainingToday + 'h') +
+        m('Overdue', e.overdueCount, e.overdueCount > 0) + m('Active', e.activeCount) +
+        m('Accuracy', e.estimationAccuracy == null ? '—' : e.estimationAccuracy + '%') +
+      '</div>' +
+      '<div class="pl-kv"><span class="k">Free for new work</span><span class="v">' + h(e.expectedFree) + '</span></div>' +
+      (e.topTask ? '<div class="pl-kv"><span class="k">Top priority</span><span class="v pl-top">' + (e.topTask.priority ? h(e.topTask.priority) + ' · ' : '') + h(e.topTask.title) + '</span></div>' : '') +
+      '<div class="pl-projwrap"><div class="pl-projh">Pending by project</div>' + proj + '</div>' +
+    '</div>';
   }
 
   /* Mobile Team & access — member cards + Add member (design 10). */

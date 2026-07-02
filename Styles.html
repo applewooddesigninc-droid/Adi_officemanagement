@@ -121,6 +121,33 @@
   .projc-name{font-weight:700;font-size:13.5px;line-height:1.35;color:var(--text);word-break:break-word}
   @media(max-width:1024px){ .cat-grid{grid-template-columns:1fr} }
 
+  /* Resource planning (L1) */
+  .plan-legend{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 16px;font-size:13px;color:var(--muted)}
+  .plan-legend span{display:inline-flex;align-items:center;gap:6px}
+  .pl-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+  .plan-card{padding:16px;display:flex;flex-direction:column;gap:12px}
+  .pl-head{display:flex;align-items:center;gap:12px}
+  .pl-av{width:42px;height:42px;border-radius:50%;background:var(--brown);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .pl-name{font-weight:800;font-size:16px}
+  .pl-bar-row{display:flex;align-items:center;gap:10px}
+  .pl-bar{flex:1;height:10px;background:var(--line-soft);border-radius:999px;overflow:hidden}
+  .pl-bar i{display:block;height:100%}
+  .pl-pct{font-size:13px;font-weight:800;white-space:nowrap}
+  .pl-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:var(--bg);border-radius:12px;padding:12px}
+  .pl-m{text-align:center;min-width:0}
+  .pl-mv{font-size:18px;font-weight:800;color:var(--text)}
+  .pl-ml{font-size:11px;color:var(--muted);margin-top:2px}
+  .pl-kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;border-top:1px solid var(--line-soft);padding-top:8px}
+  .pl-kv .k{color:var(--muted);flex-shrink:0}
+  .pl-kv .v{font-weight:700;text-align:right}
+  .pl-top{max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pl-projwrap{border-top:1px solid var(--line-soft);padding-top:8px}
+  .pl-projh{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px}
+  .pl-proj{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0}
+  .pl-proj span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  html.mob .plan-grid{grid-template-columns:1fr}
+
   /* Board */
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .col{background:#f7f1e7;border:1px solid var(--line);border-radius:var(--radius);padding:10px;min-height:120px}
